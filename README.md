@@ -1,113 +1,88 @@
-# Halfpipe prototype-2
+# Lip
 
-A small Python desktop app for checking the height of a selected jump frame above the blue line of a halfpipe.
+Prototype-2 for reviewing halfpipe jumps from real video. The Python program samples the selected video range, finds body landmarks and a local blue lip, and groups above-lip measurements into jump candidates. It has a native Windows desktop window with a timeline, peak images, review controls, and CSV export.
 
-This first version is manual. You choose the peak frame and click the lip and hip. It measures a vertical gap in the image. It does not detect athletes, find jumps, or process a live broadcast automatically.
+This is a research prototype. A completed scan means the selected range was processed. It does not mean every jump was found or measured correctly. Spectators, flips, poor lighting, occlusion, camera cuts, and blue signs can cause errors. Review the marks before using a result. No detection accuracy or metre accuracy has been established.
 
-## Start on Windows
+## Use the desktop app
 
-Install Python 3.12 from [python.org](https://www.python.org/downloads/). Include Tcl/Tk and pip in the installer. Open PowerShell in this project folder, then run:
+On the prepared computer, double-click the **Lip** desktop shortcut. The packaged app includes Python, the required libraries, and the pose model. Keep the app's `_internal` folder beside its executable.
 
-```powershell
-py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe app.py examples/demo.mp4
-```
+1. Click **Browse video**, drop a local video onto the window, or paste a direct video link.
+2. Leave Start and End at 0 to process the whole video. For a first check, set End to 45 seconds.
+3. Choose a sample rate. 6 samples per second gives a useful first pass. 2 is faster but can miss brief peaks. This is offline analysis; it is not guaranteed to run live.
+4. Click **Analyse video**. The window stays responsive while the background task runs. Review actions wait until it finishes.
+5. Select each candidate. Inspect the athlete box, yellow hip point, blue lip, and yellow image gap.
+6. Use **Correct lip and hip points** if needed. Click lip A, lip B, and the hip. The two lip points must be on opposite horizontal sides of the hip.
+7. Use the Time field and **Add missed jump** to measure a peak the detector missed. These entries are marked as manual.
+8. Mark the candidate reviewed or exclude it. Export the table as CSV.
 
-You do not need to activate the environment. To open the app without the demo:
+**Stop and save partial results** ends after the current read and model call. Partial results remain available. **Open session** loads a saved `report.json`. Sessions reopen for review; the app does not resume an interrupted scan automatically.
 
-```powershell
-.\.venv\Scripts\python.exe app.py
-```
+## What the height means
 
-Tested with Python 3.12 on Windows. The measurement checks use Python's built-in test tools:
+Image coordinates start at the top left. Y increases downward. The program fits a short blue boundary near the athlete and evaluates its image Y coordinate at the hip's X coordinate.
 
-```powershell
-.\.venv\Scripts\python.exe -m unittest -v
-```
+`image gap in pixels = local lip Y - hip Y`
 
-## Try the demo first
+A positive value means the hip is above that fitted line in the picture. This is a signed image-space gap. It is not a measured physical vertical distance, a full centre-of-mass calculation, or height above the landing surface.
 
-The included demo is a generated drawing. It is not real footage or a real height measurement.
+The main height column is in metres. Uncalibrated entries show **Set scale**. For a metre estimate, select the jump, enter a known vertical reference length in metres, and click **Calibrate this jump**. Click the top then bottom of that reference in the original frame. The program uses the reference direction to intersect the lip through the hip, then divides that projected gap by pixels per metre. The reference must represent world vertical at the athlete's local depth. This estimate still assumes local camera projection and depth are valid. A single scale cannot be reused safely across camera pan, tilt, zoom, or changing depth. Known pipe dimensions alone do not solve this projection problem.
 
-1. Move the slider to frame 15. Frames start at 0.
-2. Click the blue line at `(200, 400)` and `(760, 400)` in the video image. These are lip A and lip B.
-3. Click the red hip dot at `(480, 160)`.
-4. The status should show `240.0 px`.
-5. For this demo only, enter `80` in Pixels/metre. Save jump `1`.
-6. The row should show `3.0` metres because `240 / 80 = 3`.
-7. Click Export CSV and choose where to save it. Compare it with [the example export](examples/demo-result.csv).
+Candidate start/end are the first and last positive samples in a group, not exact takeoff and landing times. Missing evidence is stored as `null`, not a zero-height jump. Evidence scores are heuristics, not calibrated probabilities. All automatic candidates start as **Needs review**.
 
-The numbers above are image coordinates. The top toolbar is outside the video image.
+## Saved files
 
-## Use your video
+Normal sessions are stored in `%LOCALAPPDATA%\Lip\sessions`.
 
-1. Choose Open video for a local file, or Open link for a direct video URL.
-2. Use the slider to find a jump. Use Previous and Next to compare nearby frames. The other two buttons move by 30 frames.
-3. Choose the frame where the hip looks highest above the nearby lip. This choice is yours. The program does not find the peak.
-4. Click two points on the same local section of the blue line. The hip must be horizontally between the points. Do not connect the opposite sides of the pipe.
-5. Click the centre of the hip. This is a visual hip reference, not a full body centre of mass calculation.
-6. Leave Pixels/metre empty unless you have a valid local scale for that frame.
-7. Give the jump a label and click Save/replace jump.
-8. Use a different label for the next jump. Saving the same label for the same video replaces its previous row.
-9. Export CSV before closing. Rows are kept in memory and are lost when the app closes. There is no CSV import yet.
-
-Moving to another frame clears the points and the scale. Mark the lip again because the camera can move. Reset points clears the clicks on the current frame. It keeps the current scale, so recheck it if you choose a different section.
-
-The window is fixed at about 960 by 875 screen pixels. On a small screen, reduce Windows display scaling or use a larger display. The table shows about five rows at once; CSV export contains all saved rows.
-
-## What the result means
-
-Pixels are the small squares in a video image. The app keeps measurements in the original video resolution even when it shows a smaller preview.
-
-Image coordinates start at the top left. X increases to the right. Y increases downwards. The two lip clicks define a straight local line:
-
-```text
-lip_y = y1 + (y2 - y1) * (hip_x - x1) / (x2 - x1)
-height_px = lip_y - hip_y
-height_m = height_px / pixels_per_metre
-```
-
-A positive number means the hip is above the line in the image. A negative number means it is below. This uses the image's vertical direction. It is not a perpendicular distance to the lip, and it is not automatically the real vertical direction.
-
-For example, if a known vertical reference of 2 metres covers 160 pixels in the original frame, its scale is `160 / 2 = 80` pixels per metre. The reference must be near the athlete, at a similar depth, and aligned with the direction being measured. A horizontal pipe width or an athlete's guessed height is not enough. Do not measure the reduced preview and then use its pixels as original pixels.
-
-A single camera loses depth information. Perspective, camera tilt, curved lips, zoom, and motion can all change the scale. Mark a short local lip section rather than treating the whole pipe as a straight line. Metre values are rough estimates under those assumptions. Leave the scale empty if it is unknown. This prototype is not ready for judging.
-
-The sample event link was opened and its first frame was decoded during development. The full file is about 17.4 GB. It is not included here. Direct links can be slow to seek. The app uses a 10 second open timeout and a 5 second read timeout where the video backend supports them. Loading can briefly pause the window. Short local clips are easier to use. Videos need a readable frame count and frame rate. The `seconds` column assumes a constant frame rate and can be approximate for variable frame rate footage.
-
-## CSV columns
-
-| Column | Meaning |
+| File | Purpose |
 | --- | --- |
-| video | Filename or final part of the direct link |
-| jump | Your jump label |
-| frame | Selected frame number, starting at 0 |
-| seconds | Frame number divided by the reported frame rate |
-| height_px | Signed image vertical gap in original pixels |
-| height_m | Optional rough estimate in metres, blank if scale is unknown |
-| pixels_per_metre | Scale used for this row, blank if unknown |
-| lip_a_x, lip_a_y | First lip click in original pixels |
-| lip_b_x, lip_b_y | Second lip click in original pixels |
-| hip_x, hip_y | Hip click in original pixels |
+| `report.json` | Samples, settings, candidates, review decisions, and errors |
+| `jumps.csv` | Candidate times, pixel gaps, optional estimates, and review flags |
+| `jump-001.jpg` | Marked peak image for one candidate |
+| `review.mp4` | Silent sampled playback with marks and source timestamps |
 
-## Files and learning
+Review playback is written during analysis. Later manual corrections update the peak image, report, and CSV. They do not rewrite the full playback. Excluded rows remain in the CSV with an explicit exclusion flag. Store the source video and session together if moving them to another computer. A session contains a source path, not the source video itself.
 
-- [app.py](app.py): the window, video reading, clicks, saved rows, and CSV export.
-- [measurement.py](measurement.py): the formula and input checks.
-- [test_measurement.py](test_measurement.py): nine checks of the formula.
-- [docs/BEGINNER_GUIDE.md](docs/BEGINNER_GUIDE.md): basic Python ideas and how the app works.
-- [docs/LINE_BY_LINE.md](docs/LINE_BY_LINE.md): every line of the three Python files explained.
-- [docs/PROTOCOL.md](docs/PROTOCOL.md): short work summary.
-- [docs/HOURS.md](docs/HOURS.md): empty table for your real working hours.
-- [docs/TESTING.md](docs/TESTING.md): what was checked and what still needs checking.
+## Run from Python
 
-Python handles the logic, OpenCV reads video frames, Tkinter builds the window, and Pillow puts frames into that window. No account or paid service is needed to run it.
+Use Python 3.12 on Windows. Open a terminal in this project folder:
 
-The video frame controls follow the [OpenCV VideoCapture documentation](https://docs.opencv.org/4.10.0/d8/dfe/classcv_1_1VideoCapture.html) and [frame position definitions](https://docs.opencv.org/4.12.0/d4/d15/group__videoio__flags__base.html).
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+python app.py
+```
 
-## Next steps
+If script activation is disabled, use `.venv\Scripts\python.exe` instead of `python`. No system setting change is needed. The source version downloads the verified 13.5 MB model once if it is not already present. Video and pose processing run locally. Direct video links and first model download require Internet access.
 
-Get a short clip with known jump heights and camera information. Compare repeated manual measurements with those references. After that, consider athlete tracking and automatic peak selection.
+```powershell
+python -m unittest -v
+```
 
-Development is on `prototype-2`. It has not been merged into `main`.
+To build a Windows folder containing the app, run `build.ps1` from PowerShell after installing requirements. The build is platform specific. Source code and build instructions are provided on the `prototype-2` branch. No merge into `main` is needed.
+
+## Project files
+
+| File | Job |
+| --- | --- |
+| `app.py` | Native window, background tasks, review, and exports |
+| `vision.py` | Verified model download, pose detection, athlete selection, and blue lip fitting |
+| `analysis.py` | Video sampling, jump grouping, marked playback, and session files |
+| `measurement.py` | Geometry for point corrections and a local vertical metre reference |
+| `test_*.py` | Geometry, grouping, session, and review tests |
+| `docs/BEGINNER_GUIDE.md` | Python basics and the complete data flow |
+| `docs/LINE_BY_LINE.md` | Every Python source line explained |
+| `docs/PROTOCOL.md` | Short work protocol |
+| `docs/WORK_LOG.md` | Decisions, experiments, and current limitations |
+| `docs/TESTING.md` | What was tested and what the tests do not prove |
+| `docs/HOURS.md` | Blank personal time record |
+
+## Next development step
+
+Label athlete identities, blue lip points, and jump peaks in representative runs. Compare automatic results with those labels. Train or adapt a detector for this camera and winter clothing, improve tracking through flips, and calibrate the camera for physical heights. Until those steps are completed, this app is a review tool for candidate measurements.
+
+## Dependencies and source
+
+The pose model is [Xenova's ONNX export of YOLOv8n-pose](https://huggingface.co/Xenova/yolov8n-pose). Its export uses 17 body points; this program uses the hip points as the requested proxy. Window threading follows [Qt's QThread API](https://doc.qt.io/qtforpython-6/PySide6/QtCore/QThread.html). See `THIRD_PARTY.md` and `LICENSE` for model attribution and dependency notices. The application source is provided under AGPL-3.0. The event footage and model weights are not stored in this repository.

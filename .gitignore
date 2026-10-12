@@ -4,3 +4,10 @@ __pycache__/
 *.csv
 !examples/*.csv
 .DS_Store
+models/
+dist/
+build/
+*.spec
+sessions/
+*.onnx
+*.download
