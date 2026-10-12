@@ -26,3 +26,19 @@ Only when their real spacing is confirmed and the scene geometry makes them a su
 - Labelled example jumps with independently measured physical heights and uncertainty.
 
 The two-point tool is a local approximation for a known vertical reference. It is not full camera calibration, 3D reconstruction, or a validated judging measurement. No unverified blue-line distance is inserted into the real results.
+
+## Dimensions supplied for this event
+
+| Quantity | Supplied value |
+| --- | --- |
+| Wall height | 6.7 m |
+| Pipe length | 160 m |
+| Wall-to-wall width | 22 m |
+| Pipe slope | 18 degrees |
+| Wall vertical-section inclination | 81 degrees |
+
+These values are stored in new reports as `pipe_dimensions`, with their source recorded as user supplied. They describe the course, but do not specify which image points correspond to surveyed 3D positions, the camera's focal length/zoom, or the athlete's depth.
+
+In perspective projection, image position depends on focal length, camera pose, and 3D depth. A known 22 m width is a horizontal reference across the pipe, not a vertical metre ruler at an airborne hip. The 18-degree course slope and 81-degree wall inclination also have different directions from world vertical. The local two-point tool deliberately asks for world vertical. See the [official OpenCV camera calibration model](https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html).
+
+The 6.7 m default is not automatically applied. Clicking two arbitrary points and entering 6.7 would create a number with an unverified physical meaning. If the full vertical height is not visibly represented at the rider's depth, ask the company for a surveyed local reference or camera calibration. The next implementation can use labelled 3D-to-2D course correspondences together with camera data; those inputs are not supplied yet.

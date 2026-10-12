@@ -9,15 +9,15 @@ This is a research prototype. A completed scan means the selected range was proc
 On the prepared computer, double-click the **Lip** desktop shortcut. The packaged app includes Python, the required libraries, and the pose model. Keep the app's `_internal` folder beside its executable.
 
 1. Click **Browse video**, drop a local video onto the window, or paste a direct video link.
-2. Leave Start and End at 0 to process the whole video. For a first check, set End to 45 seconds.
-3. Choose a sample rate. 6 samples per second gives a useful first pass. 2 is faster but can miss brief peaks. This is offline analysis; it is not guaranteed to run live.
-4. Click **Analyse video**. The window stays responsive while the background task runs. Review actions wait until it finishes.
+2. Open **Scan options** if you want a shorter range. Leave Start and End at 0 to process the whole video. For a first check, set End to 45 seconds.
+3. Choose a sample rate in **Scan options**. The default is 2 for a faster whole-event pass. 6 samples per second gives a useful first pass. 2 is faster but can miss brief peaks. This is offline analysis; it is not guaranteed to run live.
+4. Click **Scan video**. The window stays responsive while the background task runs. Review actions wait until it finishes.
 5. Select each candidate. Inspect the athlete box, yellow hip point, blue lip, and yellow image gap.
-6. Use **Correct lip and hip points** if needed. Click lip A, lip B, and the hip. The two lip points must be on opposite horizontal sides of the hip.
+6. Use **Correct points** if needed. Click lip A, lip B, and the hip. The two lip points must be on opposite horizontal sides of the hip.
 7. Use the Time field and **Add missed jump** to measure a peak the detector missed. These entries are marked as manual.
 8. Mark the candidate reviewed or exclude it. Export the table as CSV.
 
-**Stop and save partial results** ends after the current read and model call. Partial results remain available. **Open session** loads a saved `report.json`. Sessions reopen for review; the app does not resume an interrupted scan automatically.
+**Stop scan** ends after the current read and model call. Partial results remain available. **Open session** loads a saved `report.json`. Sessions reopen for review; the app does not resume an interrupted scan automatically.
 
 ## What the height means
 
@@ -27,9 +27,15 @@ Image coordinates start at the top left. Y increases downward. The program fits 
 
 A positive value means the hip is above that fitted line in the picture. This is a signed image-space gap. It is not a measured physical vertical distance, a full centre-of-mass calculation, or height above the landing surface.
 
-The main height column is in metres. Uncalibrated entries show **Set scale**. For a metre estimate, select the jump, enter a known vertical reference length in metres, and click **Calibrate this jump**. Click the top then bottom of that reference in the original frame. The program uses the reference direction to intersect the lip through the hip, then divides that projected gap by pixels per metre. The reference must represent world vertical at the athlete's local depth. This estimate still assumes local camera projection and depth are valid. A single scale cannot be reused safely across camera pan, tilt, zoom, or changing depth. Known pipe dimensions alone do not solve this projection problem.
+The main height column is in metres. Uncalibrated entries show **Calibrate**. For a metre estimate, select the jump, enter a known vertical reference length in metres, and click **Calibrate this jump**. Click the top then bottom of that reference in the original frame. The program uses the reference direction to intersect the lip through the hip, then divides that projected gap by pixels per metre. The reference must represent world vertical at the athlete's local depth. This estimate still assumes local camera projection and depth are valid. A single scale cannot be reused safely across camera pan, tilt, zoom, or changing depth. Known pipe dimensions alone do not solve this projection problem.
 
-Candidate start/end are the first and last positive samples in a group, not exact takeoff and landing times. Missing evidence is stored as `null`, not a zero-height jump. Evidence scores are heuristics, not calibrated probabilities. All automatic candidates start as **Needs review**.
+Candidate start/end are the first and last positive samples in a group, not exact takeoff and landing times. A candidate needs below-lip evidence within the preceding three seconds, without crossing a camera cut. This rejects the usual initial drop-in from the deck. Missing takeoff evidence can also reject a real jump; rejected segments remain in the report and skipped.csv. Extremely weak or stationary peaks are rejected too. At 2 samples per second, a strong moving single-frame candidate is retained with a sparse-evidence warning. Runs are separated by a pause over 15 seconds between candidates. Run labels are riding sequences, not athlete identities, and replays can appear again. Missing evidence is stored as `null`, not a zero-height jump. Evidence scores are heuristics, not calibrated probabilities. All automatic candidates start as **Needs review**.
+
+## Supplied pipe dimensions
+
+The session records the supplied values: wall height 6.7 m, length 160 m, width 22 m, slope 18 degrees, and wall inclination 81 degrees. The reference length starts at 6.7 m for convenience. Use that value only when two visible points represent the full vertical wall height at the rider's depth. A curved wall surface, pipe width, or two arbitrary blue stripes are not interchangeable with this vertical reference.
+
+Known scene dimensions must be matched to visible image points and the camera's projection. The app does not silently assume those correspondences. See [OpenCV's camera model](https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html) and `docs/CALIBRATION.md`.
 
 ## Saved files
 
@@ -38,7 +44,8 @@ Normal sessions are stored in `%LOCALAPPDATA%\Lip\sessions`.
 | File | Purpose |
 | --- | --- |
 | `report.json` | Samples, settings, candidates, review decisions, and errors |
-| `jumps.csv` | Candidate times, pixel gaps, optional estimates, and review flags |
+| `jumps.csv` | Candidate times, run numbers, pixel gaps, optional estimates, and review flags |
+| `skipped.csv` | Rejected interval times and reasons for checking missed jumps |
 | `jump-001.jpg` | Marked peak image for one candidate |
 | `review.mp4` | Silent sampled playback with marks and source timestamps |
 

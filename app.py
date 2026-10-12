@@ -8,7 +8,7 @@ import cv2
 import numpy as np
 from PySide6.QtCore import QThread, Qt, QUrl, Signal
 from PySide6.QtGui import QColor, QDesktopServices, QIcon, QImage, QPainter, QPainterPath, QPen, QPixmap
-from PySide6.QtWidgets import QApplication, QComboBox, QDoubleSpinBox, QFileDialog, QFrame, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMainWindow, QMessageBox, QProgressBar, QPushButton, QScrollArea, QTabWidget, QTableWidget, QTableWidgetItem, QTextBrowser, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QComboBox, QDoubleSpinBox, QFileDialog, QFrame, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMainWindow, QMessageBox, QProgressBar, QPushButton, QScrollArea, QTabWidget, QTableWidget, QTableWidgetItem, QTextBrowser, QToolButton, QVBoxLayout, QWidget
 
 from analysis import analyse, export_csv, open_video, save_report
 from measurement import calibrate_height, measure_height
@@ -16,11 +16,11 @@ from vision import annotate, data_folder
 
 ASSETS = Path(__file__).parent / 'assets'
 STYLE = '''
-QMainWindow, QWidget { background: #f7f9fc; color: #182334; font-family: 'Segoe UI'; font-size: 12px; }
-QFrame#panel { background: #ffffff; border: 1px solid #e1e7ef; border-radius: 12px; }
+QMainWindow, QWidget { background: #ffffff; color: #182334; font-family: 'Segoe UI'; font-size: 12px; }
+QFrame#panel { background: #ffffff; border: 1px solid #e1e7ef; border-radius: 5px; }
 QLabel { background: transparent; }
 QLabel#muted { color: #64748b; }
-QLabel#title { font-size: 28px; font-weight: 700; }
+QLabel#title { font-size: 24px; font-weight: 600; }
 QLabel#metric { font-size: 27px; font-weight: 600; color: #2563eb; }
 QPushButton { background: #e9eef6; border: 1px solid #dce4ef; padding: 9px 12px; border-radius: 7px; font-weight: 600; }
 QPushButton:hover { background: #dbe7fb; }
@@ -34,7 +34,8 @@ QProgressBar::chunk { background: #2563eb; border-radius: 4px; }
 QTableWidget { background: #ffffff; border: 1px solid #e1e7ef; gridline-color: #e9eef6; selection-background-color: #dce9ff; selection-color: #182334; }
 QHeaderView::section { background: #f2f6fc; color: #55657b; padding: 9px; border: none; font-weight: 600; }
 QTabWidget::pane { border: none; }
-QTabBar::tab { background: #f7f9fc; color: #64748b; padding: 12px 20px; border-bottom: 2px solid transparent; }
+QToolButton { border: none; color: #526173; padding: 6px 0; text-align: left; }
+QTabBar::tab { background: #ffffff; color: #64748b; padding: 10px 16px; border-bottom: 2px solid transparent; }
 QTabBar::tab:selected { color: #2563eb; border-bottom-color: #2563eb; }
 QTextBrowser { background: #ffffff; border: none; padding: 18px; }
 '''
@@ -69,7 +70,7 @@ class VideoCanvas(QLabel):
     point_added = Signal(object)
 
     def __init__(self):
-        super().__init__('Open a video to begin\n\nHip detection, local lip detection, and automatic jump candidates')
+        super().__init__('Choose a video, then click Scan video')
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setMinimumSize(400, 240)
         self.setStyleSheet('background:#eef2f8; color:#718198; border:1px solid #e9eef6; border-radius:10px;')
@@ -240,11 +241,18 @@ class MainWindow(QMainWindow):
         body.setContentsMargins(0, 12, 0, 0)
         left = QVBoxLayout()
         body.addLayout(left, 3)
-        cards = QHBoxLayout()
-        self.candidate_metric = self.card(cards, 'JUMPS TO REVIEW', '0')
-        self.coverage_metric = self.card(cards, 'VISIBLE EVIDENCE', '0%')
-        self.time_metric = self.card(cards, 'VIDEO SCANNED', '0:00')
-        left.addLayout(cards)
+        summary = QHBoxLayout()
+        summary.addWidget(text_label('Jumps: ', 'muted'))
+        self.candidate_metric = text_label('0')
+        summary.addWidget(self.candidate_metric)
+        summary.addStretch()
+        summary.addWidget(text_label('Frames measured: ', 'muted'))
+        self.coverage_metric = text_label('0%')
+        summary.addWidget(self.coverage_metric)
+        summary.addWidget(text_label('   Scanned: ', 'muted'))
+        self.time_metric = text_label('0:00')
+        summary.addWidget(self.time_metric)
+        left.addLayout(summary)
         self.canvas = VideoCanvas()
         self.canvas.point_added.connect(self.correct_points)
         left.addWidget(self.canvas, 5)
@@ -252,7 +260,7 @@ class MainWindow(QMainWindow):
         self.chart.selected.connect(self.table_select)
         left.addWidget(self.chart, 1)
         self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(['Jump', 'Time', 'Height (m)', 'Image gap (px)', 'Status'])
+        self.table.setHorizontalHeaderLabels(['Run', 'Jump', 'Time', 'Height (m)', 'Status'])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
@@ -279,20 +287,23 @@ class MainWindow(QMainWindow):
         row.addWidget(button('Browse video', self.browse))
         row.addWidget(button('Open session', self.open_session))
         right.addLayout(row)
-        right.addWidget(text_label('Scan', 'muted'))
-        right.addWidget(text_label('Times are in seconds. End 0 means the whole video.', 'muted'))
+        scan_options = QWidget()
+        options = QVBoxLayout(scan_options)
+        options.setContentsMargins(0, 0, 0, 0)
+        self.disclosure(right, 'Scan options', scan_options)
+        options.addWidget(text_label('Seconds. End 0 scans the whole video.', 'muted'))
         row = QHBoxLayout()
         self.start = self.spin(row, 0, 999999, 'Start ')
         self.end = self.spin(row, 0, 999999, 'End ')
-        right.addLayout(row)
+        options.addLayout(row)
         self.rate = QComboBox()
         for rate in (2, 4, 6, 10):
             self.rate.addItem(f'{rate} samples / second', rate)
-        self.rate.setCurrentIndex(2)
-        right.addWidget(self.rate)
-        self.run_button = button('Analyse video', self.start_analysis, 'primary')
+        self.rate.setCurrentIndex(0)
+        options.addWidget(self.rate)
+        self.run_button = button('Scan video', self.start_analysis, 'primary')
         right.addWidget(self.run_button)
-        self.stop_button = button('Stop and save partial results', self.stop_analysis)
+        self.stop_button = button('Stop scan', self.stop_analysis)
         self.stop_button.setEnabled(False)
         right.addWidget(self.stop_button)
         self.progress = QProgressBar()
@@ -303,18 +314,18 @@ class MainWindow(QMainWindow):
         right.addWidget(text_label('Selected jump', 'muted'))
         self.details = text_label('Select a result to inspect its hip and lip marks.', 'muted')
         right.addWidget(self.details)
-        self.correct_button = button('Correct lip and hip points', self.start_correction)
+        self.correct_button = button('Correct points', self.start_correction)
         right.addWidget(self.correct_button)
         row = QHBoxLayout()
         self.manual_time = self.spin(row, 0, 999999, 'Time ')
         row.addWidget(button('Add missed jump', self.add_manual))
         right.addLayout(row)
-        self.height_metric = text_label('Set scale', 'metric')
+        self.height_metric = text_label('Needs calibration', 'metric')
         right.addWidget(self.height_metric)
         right.addWidget(text_label('Known vertical length near this jump', 'muted'))
         row = QHBoxLayout()
         self.reference_length = self.spin(row, 0.01, 100, '')
-        self.reference_length.setValue(1)
+        self.reference_length.setValue(6.7)
         row.addWidget(text_label('metres', 'muted'))
         right.addLayout(row)
         right.addWidget(button('Calibrate this jump', self.start_calibration))
@@ -322,7 +333,9 @@ class MainWindow(QMainWindow):
         row.addWidget(button('Mark reviewed', self.mark_reviewed))
         row.addWidget(button('Exclude', self.exclude, 'danger'))
         right.addLayout(row)
-        right.addWidget(text_label('Metres are estimates. Camera scale, depth, and tilt still need validation.', 'muted'))
+        right.addWidget(text_label('6.7 m is the supplied wall height. Use it only if both ends of that vertical height are visible at the rider\'s depth. Never use the curved wall surface as the reference.', 'muted'))
+        pipe_info = text_label('Pipe: 6.7 m high, 160 m long, 22 m wide. Slope: 18 degrees. Wall inclination: 81 degrees. These dimensions still need visible reference points for metre calibration.', 'muted')
+        self.disclosure(right, 'Pipe dimensions', pipe_info)
         right.addStretch()
         right.addWidget(button('Export results CSV', self.export_results))
         right.addWidget(button('Open results folder', self.open_results))
@@ -333,15 +346,18 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(guide, 'How it works')
         self.load_recent()
 
-    def card(self, layout, title, value):
-        panel = QFrame()
-        panel.setObjectName('panel')
-        box = QVBoxLayout(panel)
-        box.addWidget(text_label(title, 'muted'))
-        label = text_label(value, 'metric')
-        box.addWidget(label)
-        layout.addWidget(panel)
-        return label
+    def disclosure(self, layout, title, content):
+        """Keep secondary settings out of the way until the user opens them."""
+        toggle = QToolButton()
+        toggle.setText(title)
+        toggle.setCheckable(True)
+        toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        toggle.setArrowType(Qt.ArrowType.RightArrow)
+        toggle.toggled.connect(content.setVisible)
+        toggle.toggled.connect(lambda opened: toggle.setArrowType(Qt.ArrowType.DownArrow if opened else Qt.ArrowType.RightArrow))
+        content.hide()
+        layout.addWidget(toggle)
+        layout.addWidget(content)
 
     def spin(self, layout, minimum, maximum, prefix):
         control = QDoubleSpinBox()
@@ -418,7 +434,7 @@ class MainWindow(QMainWindow):
         self.table.setRowCount(len(report['jumps']))
         for row, jump in enumerate(report['jumps']):
             state = 'Excluded' if jump['excluded'] else ('Reviewed' if jump['reviewed'] else 'Needs review')
-            values = [str(jump['id']), f"{jump['peak_time']:.2f}s", 'Set scale' if jump['height_m'] is None else f"{jump['height_m']:.2f} m", f"{jump['height_px']:.1f}", state]
+            values = [str(jump.get('run', '?')), str(jump.get('jump_in_run', jump['id'])), f"{jump['peak_time']:.2f}s", 'Calibrate' if jump['height_m'] is None else f"{jump['height_m']:.2f} m", state]
             for column, value in enumerate(values):
                 self.table.setItem(row, column, QTableWidgetItem(value))
         self.table.blockSignals(False)
@@ -443,8 +459,8 @@ class MainWindow(QMainWindow):
             return
         self.canvas.correcting = False
         self.canvas.points = []
-        self.height_metric.setText('Set scale' if jump['height_m'] is None else f"{jump['height_m']:.2f} m")
-        self.details.setText(f"Jump {jump['id']} at {jump['peak_time']:.2f}s\nEvidence score: {jump['confidence']:.0%}\n" + '\n'.join(jump['reasons']))
+        self.height_metric.setText('Needs calibration' if jump['height_m'] is None else f"{jump['height_m']:.2f} m")
+        self.details.setText(f"Run {jump.get('run', '?')}, jump {jump.get('jump_in_run', jump['id'])} at {jump['peak_time']:.2f}s\nImage gap: {jump['height_px']:.1f} px\n" + '\n'.join(jump['reasons']))
         snapshot = Path(self.report['folder']) / jump.get('snapshot', 'missing.jpg')
         if snapshot.exists():
             image = cv2.imread(str(snapshot))

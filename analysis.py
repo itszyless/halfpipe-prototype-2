@@ -10,7 +10,9 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from vision import PoseDetector, annotate, choose_athlete, data_folder, ensure_model, find_lip, score_motion
+from vision import PoseDetector, annotate, choose_athlete, data_folder, ensure_model, find_lip, motion_field, score_motion
+
+PIPE_DIMENSIONS = dict(wall_height_m=6.7, length_m=160, width_m=22, slope_degrees=18, wall_inclination_degrees=81, source='Dimensions supplied by the user; camera correspondence not yet verified.')
 
 
 def open_video(source):
@@ -25,15 +27,16 @@ def open_video(source):
     return capture, fps, int(count)
 
 
-def find_jumps(samples, sample_rate):
-    """Group positive above-lip samples, bridge short gaps, and choose robust peaks."""
+def find_jumps(samples, sample_rate, rejected=None):
+    """Require below-lip takeoff evidence so an initial deck drop is not a jump."""
     groups, active = [], []
     gap_limit = max(0.55, 2.1 / sample_rate)
     for index, sample in enumerate(samples):
         gap = sample.get('height_px')
         person = sample.get('person')
         positive = person is not None and gap is not None and gap > max(8, person['box'][3] * 0.12)
-        if active and (sample['time'] - samples[active[-1]]['time'] > gap_limit or sample.get('cut')):
+        below = person is not None and gap is not None and sample.get('confidence', 0) >= 0.25 and gap < -max(8, person['box'][3] * 0.12)
+        if active and (sample['time'] - samples[active[-1]]['time'] > gap_limit or sample.get('cut') or below):
             groups.append(active)
             active = []
         if positive:
@@ -42,15 +45,36 @@ def find_jumps(samples, sample_rate):
         groups.append(active)
     jumps = []
     for group in groups:
-        if len(group) < 2:
+        single = len(group) == 1
+        if single:
+            item = samples[group[0]]
+            if sample_rate > 2 or item['confidence'] < 0.25 or item['person'].get('motion', 0) < 0.5 or item['height_px'] < max(20, item['person']['box'][3] * 0.3):
+                continue
+        start, end = samples[group[0]]['time'], samples[group[-1]]['time']
+        before = []
+        for index in range(group[0] - 1, -1, -1):
+            item = samples[index]
+            if start - item['time'] > 3 or samples[index + 1].get('cut'):
+                break
+            if item.get('person') is not None and item.get('height_px') is not None:
+                before.append(item)
+        takeoff = any(item.get('confidence', 0) >= 0.20 and item['height_px'] < -max(8, item['person']['box'][3] * 0.12) for item in before)
+        if not takeoff or end - start > 6:
+            if rejected is not None:
+                rejected.append(dict(start=start, end=end, reason='No below-lip takeoff evidence. Possible drop-in or missed tracking.' if not takeoff else 'Above-lip segment exceeds six seconds. Possible spectator.'))
             continue
         values = np.array([samples[index]['height_px'] for index in group])
         smoothed = np.array([np.median(values[max(0, i - 1):i + 2]) for i in range(len(values))])
         near_peak = np.flatnonzero(smoothed >= smoothed.max() * 0.95)
         chosen = int(min(near_peak, key=lambda i: abs(values[i] - smoothed[i])))
         peak = samples[group[chosen]]
-        start, end = samples[group[0]]['time'], samples[group[-1]]['time']
+        if peak['confidence'] < 0.20 or peak['person'].get('motion', 1) < 0.10:
+            if rejected is not None:
+                rejected.append(dict(start=start, end=end, reason='Peak has weak hip/lip evidence or little motion relative to the background.'))
+            continue
         reasons = ['Camera scale and vertical direction are not calibrated.']
+        if single:
+            reasons.append('Only one sampled frame supports this candidate. Rescan this interval at six samples per second.')
         if end - start > 8:
             reasons.append('Long above-lip segment; possible spectator or wrong line.')
         if any(samples[index]['person'].get('ambiguous') for index in group):
@@ -62,6 +86,14 @@ def find_jumps(samples, sample_rate):
         if group[0] == 0 or group[-1] == len(samples) - 1:
             reasons.append('Candidate touches an analysis boundary.')
         jumps.append(dict(id=len(jumps) + 1, start=round(start, 3), end=round(end, 3), peak_time=peak['time'], frame=peak['frame'], height_px=round(peak['height_px'], 2), height_m=None, confidence=round(peak['confidence'], 3), reviewed=False, excluded=False, reasons=reasons, sample_index=group[chosen], scale=None))
+    run, number, previous_end = 0, 0, None
+    for jump in jumps:
+        if previous_end is None or jump['start'] - previous_end > 15:
+            run += 1
+            number = 0
+        number += 1
+        jump.update(run=run, jump_in_run=number)
+        previous_end = jump['end']
     return jumps
 
 
@@ -76,12 +108,21 @@ def save_report(report, folder):
 
 def export_csv(report, path):
     """Export accepted and excluded candidates with their review status."""
-    columns = ['jump', 'start_seconds', 'end_seconds', 'peak_seconds', 'frame', 'height_px', 'estimated_height_m', 'pixels_per_metre', 'confidence', 'reviewed', 'excluded', 'notes', 'calibration']
+    columns = ['jump', 'run', 'jump_in_run', 'start_seconds', 'end_seconds', 'peak_seconds', 'frame', 'height_px', 'estimated_height_m', 'pixels_per_metre', 'confidence', 'reviewed', 'excluded', 'notes', 'calibration']
     with open(path, 'w', newline='', encoding='utf-8-sig') as output:
         writer = csv.writer(output)
         writer.writerow(columns)
         for jump in report['jumps']:
-            writer.writerow([jump['id'], jump['start'], jump['end'], jump['peak_time'], jump['frame'], jump['height_px'], '' if jump['height_m'] is None else jump['height_m'], '' if jump['scale'] is None else jump['scale'], jump['confidence'], jump['reviewed'], jump['excluded'], ' '.join(jump['reasons']), json.dumps(jump.get('calibration'))])
+            writer.writerow([jump['id'], jump.get('run', ''), jump.get('jump_in_run', ''), jump['start'], jump['end'], jump['peak_time'], jump['frame'], jump['height_px'], '' if jump['height_m'] is None else jump['height_m'], '' if jump['scale'] is None else jump['scale'], jump['confidence'], jump['reviewed'], jump['excluded'], ' '.join(jump['reasons']), json.dumps(jump.get('calibration'))])
+
+
+def export_skipped(report, path):
+    """Make rejected interval times readable without opening the JSON report."""
+    with open(path, 'w', newline='', encoding='utf-8-sig') as output:
+        writer = csv.writer(output)
+        writer.writerow(['start_seconds', 'end_seconds', 'reason'])
+        for segment in report.get('rejected_segments', []):
+            writer.writerow([segment['start'], segment['end'], segment['reason']])
 
 
 def analyse(source, start=0, end=0, sample_rate=6, progress=lambda data: None, preview=lambda frame: None, cancelled=lambda: False, folder=None, model_path=None):
@@ -106,7 +147,10 @@ def analyse(source, start=0, end=0, sample_rate=6, progress=lambda data: None, p
     last = min(count, math.ceil(end * fps))
     stride = max(1, round(fps / sample_rate))
     report['effective_sample_rate'] = fps / stride
-    report['detector_revision'] = 'crop-motion-v1'
+    report['detector_revision'] = 'motion-roi-takeoff-v2'
+    report['grouping_revision'] = 'takeoff-v3'
+    report['pipe_dimensions'] = PIPE_DIMENSIONS.copy()
+    report['run_note'] = 'Runs are separated by gaps over 15 seconds between jump candidates. These are riding sequences, not identified athlete names. Replays can appear again.'
     capture.set(cv2.CAP_PROP_POS_FRAMES, first)
     previous, previous_image, previous_frame = None, None, None
     started = time.monotonic()
@@ -136,9 +180,10 @@ def analyse(source, start=0, end=0, sample_rate=6, progress=lambda data: None, p
             cut = previous_image is not None and np.abs(tiny - previous_image).mean() > 45
             if cut:
                 previous = None
-            people = detector.detect(frame)
-            if not cut:
-                score_motion(previous_frame, frame, people)
+            field = motion_field(previous_frame, frame) if not cut else None
+            people = detector.detect(frame, motion=field)
+            if field is not None:
+                score_motion(previous_frame, frame, people, field)
             person = choose_athlete(people, frame.shape, previous)
             lip = find_lip(frame, person['hip'], person['box']) if person else None
             height_px = lip['y'] - person['hip'][1] if lip else None
@@ -176,7 +221,8 @@ def analyse(source, start=0, end=0, sample_rate=6, progress=lambda data: None, p
         elif report['state'] == 'running':
             report['state'] = 'complete'
             report['complete'] = True
-        report['jumps'] = find_jumps(report['samples'], sample_rate)
+        report['rejected_segments'] = []
+        report['jumps'] = find_jumps(report['samples'], sample_rate, report['rejected_segments'])
         report['elapsed_seconds'] = round(time.monotonic() - started, 2)
         for jump in report['jumps']:
             if cancelled():
@@ -189,6 +235,7 @@ def analyse(source, start=0, end=0, sample_rate=6, progress=lambda data: None, p
                 jump['snapshot'] = filename
         save_report(report, folder)
         export_csv(report, folder / 'jumps.csv')
+        export_skipped(report, folder / 'skipped.csv')
         return report
     except Exception as error:
         report['state'] = 'error'

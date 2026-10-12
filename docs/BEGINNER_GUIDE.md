@@ -31,8 +31,8 @@ The function rejects invalid numbers, a nearly vertical lip segment, a hip outsi
 1. `analysis.py` opens the video and reads its frame rate and length. A frame is one still image. At 30 frames per second, frame 300 is about 10 seconds into the video.
 2. It reads a sample and skips some intervening frames. Sampling reduces work. A sample rate of 6 means approximately six analysed images each second. The actual rate is `video_fps / stride`, because frame steps are whole numbers.
 3. `vision.py` resizes the image to fit a 640 by 640 square and adds grey padding. It changes the colour order from OpenCV's BGR to RGB. It changes the array shape to batch, colour, height, width and divides the numbers by 255.
-4. ONNX Runtime runs the pose model on the CPU. Its output contains possible person boxes, scores, and 17 body points. Overlapping boxes are filtered. Visible left and right hip points are combined with confidence weights. Weak or crowded poses are also tested with side rotations and mapped back to original image coordinates.
-5. A centre crop gives the model a closer view. Optical flow tracks image features between samples. A robust affine transform estimates the background camera motion. Extra motion inside a person box increases its athlete ranking. Central position, prominence, and continuity also contribute. This is only a tracking heuristic. It can choose a spectator. It does not know an athlete's name or guarantee identity.
+4. ONNX Runtime runs the pose model on the CPU. Its output contains possible person boxes, scores, and 17 body points. Overlapping boxes are filtered. Visible left and right hip points are combined with confidence weights. Moving crops are also tested at four rotations and mapped back to original image coordinates.
+5. Optical flow tracks image features between samples. The strongest moving cluster becomes a magnified crop. This gives a small sideways rider more image detail. When motion cannot be estimated, a centre crop and side views provide a fallback. A robust affine transform estimates the background camera motion. Extra motion inside a person box increases its athlete ranking. Central position, prominence, and continuity also contribute. This is only a tracking heuristic. It can choose a spectator. It does not know an athlete's name or guarantee identity.
 6. The lip detector changes the frame to HSV colour. Hue describes colour, saturation describes colour strength, and value describes brightness. A blue mask keeps pixels inside chosen colour limits.
 7. Small blue components are removed. Near the hip, the detector takes the upper blue boundary at several X coordinates. It tries random line pairs and counts nearby supporting points. This robust fitting idea is called RANSAC. A final least-squares line is fitted to the strongest support. Sparse, narrow, or heavily extrapolated fits are rejected.
 8. The lip Y minus the hip Y becomes the signed image gap. The weakest hip, person, or lip evidence contributes to the evidence score. If either the person or lip is missing, the gap stays `None`.
@@ -40,7 +40,9 @@ The function rejects invalid numbers, a nearly vertical lip segment, a hip outsi
 
 ## How samples become candidates
 
-`find_jumps` keeps gaps larger than both 8 pixels and a fraction of the detected person's box height. It joins nearby positive samples, allows a brief missing gap, and starts a new group across a large time gap or a scene cut. A group needs at least two positive samples.
+`find_jumps` keeps gaps larger than both 8 pixels and a fraction of the detected person's box height. It joins nearby positive samples, allows a brief missing gap, and starts a new group across a large time gap or a scene cut. A group normally needs at least two positive samples. In the fast 2-sample scan, a strong moving single-frame candidate is kept and explicitly flagged for a closer scan.
+
+A candidate must have a negative below-lip sample within the previous three seconds and after the last scene cut. A rider already above the lip at the start of the shot therefore does not count as a takeoff. This rejects the initial drop-in, but can miss a jump when its approach is hidden. Rejected segments are saved for inspection. A pause over 15 seconds between candidates starts another numbered riding sequence. This does not recognise names or distinguish a replay.
 
 A three-value median reduces the effect of a single spike. The peak is selected near the largest median value while favouring an actual sample consistent with its neighbours. This makes a reviewable peak image, but can miss the true maximum between sampled frames. Candidate timing is approximate.
 
@@ -50,7 +52,7 @@ Warnings explain uncertain choices. Calibration is always unresolved initially. 
 
 A `class` describes a kind of object. An object holds data and methods. `self` means the current object. `MainWindow` is the app's window. `VideoCanvas` displays a frame. `HeightChart` draws the timeline. `super()` calls behaviour inherited from Qt's base class.
 
-Qt calls event methods when something happens. A click emits a signal. `.connect(action)` connects the signal to a function. For example, the Analyse button calls `start_analysis`. The window then starts `AnalysisWorker`, a `QThread` subclass. Its `run` method performs the long scan in a background thread. Its signals carry progress, previews, and the finished report back to the window.
+Qt calls event methods when something happens. A click emits a signal. `.connect(action)` connects the signal to a function. For example, the Scan video button calls `start_analysis`. The window then starts `AnalysisWorker`, a `QThread` subclass. Its `run` method performs the long scan in a background thread. Its signals carry progress, previews, and the finished report back to the window.
 
 The worker does not change controls directly. Qt delivers the updates to the window thread. Stop requests an interruption; the scan checks it between work steps. A blocked network read may take up to its timeout before stopping. Closing during a scan requests a stop and waits for cleanup instead of abandoning an active thread.
 
@@ -71,7 +73,7 @@ Try these in a copy of the project. Predict the result before running it.
 3. Run the same short clip at 2 and 6 samples per second. Compare timing and missed peaks.
 4. Exclude one candidate and open the CSV. Find the review and exclusion columns.
 5. Explain why a 90% evidence score does not mean a 90% chance that a physical height is correct.
-6. Trace the Analyse button through `start_analysis`, `AnalysisWorker.run`, `analyse`, and `receive_report`.
+6. Trace the Scan video button through `start_analysis`, `AnalysisWorker.run`, `analyse`, and `receive_report`.
 
 Useful reference: [Python's official tutorial](https://docs.python.org/3/tutorial/). The exact source lines are explained in `LINE_BY_LINE.md`; use this guide for the larger ideas.
 
@@ -84,3 +86,13 @@ The hip plus an unknown distance times the unit vector describes a line followin
 Example: a visible vertical reference is 20 pixels long and is known to be 1 metre. The hip-to-lip distance along that direction is 60 pixels. The result is 3 metres. The tests use this known geometry. It does not establish a scale for the Calgary recording.
 
 The blue marks in the event footage do not have a confirmed spacing in the supplied information. WinSport describes its pipe as 22 feet, but the wall is curved and the camera sees perspective. Dividing an arbitrary visible wall span by 6.7 metres would not establish a valid local vertical scale. Ask for surveyed reference marks or camera calibration before reporting measured physical heights. See CALIBRATION.md for sources and the remaining requirements.
+
+## Follow the spectator fix
+
+`motion_field` finds image corners, follows them into the next frame, and fits a translation/rotation/scale transform to the common background movement. It subtracts that predicted movement from each tracked point. A skier moving differently from the background has a larger residual.
+
+`motion_regions` makes a mask around the strongly moving points and groups touching regions. It requires several supporting features, rejects huge regions and image edges, and takes the strongest remaining cluster. `PoseDetector.detect` magnifies that crop and tries four orientations. `restore_person` reverses both the rotation and crop offset, so all hips and boxes use the original video's pixels again.
+
+`score_motion` measures residual motion inside each person box. `choose_athlete` combines it with position, size, model support, and continuity. In the difficult first-run frame, the airborne rider receives strong residual motion while the standing spectator receives almost none. This fixes that inspected case. Motion is still a heuristic, so another person moving near the pipe can confuse it.
+
+The supplied course dimensions are saved as metadata. They are not a Python shortcut for camera calibration. Read CALIBRATION.md before changing a pixel result into metres.

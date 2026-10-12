@@ -48,32 +48,52 @@ class PoseDetector:
         self.session = ort.InferenceSession(str(path), sess_options=options, providers=['CPUExecutionProvider'])
         self.input_name = self.session.get_inputs()[0].name
 
-    def detect(self, frame, threshold=0.28):
-        """Try side views for crowded or weak poses, then combine overlapping boxes."""
+    def detect(self, frame, threshold=0.28, motion=None):
+        """Search the full image and magnified moving regions, including rotated poses."""
         people = self.detect_upright(frame, threshold)
         height, width = frame.shape[:2]
+        regions = motion_regions(motion, frame.shape) if motion else []
         left, top = round(width * 0.2), round(height * 0.05)
         crop = frame[top:round(height * 0.95), left:round(width * 0.8)]
-        for person in self.detect_upright(crop, threshold):
+        for person in self.detect_upright(crop, threshold) if not regions and motion is None else []:
             person['box'][0] += left
             person['box'][1] += top
             person['hip'] = [person['hip'][0] + left, person['hip'][1] + top]
             person['points'] = [[point[0] + left, point[1] + top, point[2]] for point in person['points']]
             people.append(person)
-        for turn in (1, 3):
-            for person in self.detect_upright(np.rot90(frame, turn).copy(), threshold):
-                def restore(point):
-                    x, y = point[:2]
-                    return [width - 1 - y, x] if turn == 1 else [y, height - 1 - x]
-                x, y, w, h = person['box']
-                corners = np.array([restore([x, y]), restore([x + w, y + h])])
-                minimum, maximum = corners.min(axis=0), corners.max(axis=0)
-                person['box'] = [*minimum.tolist(), *(maximum - minimum).tolist()]
-                person['hip'] = restore(person['hip'])
-                person['points'] = [restore(point) + [point[2]] for point in person['points']]
-                people.append(person)
+        for left, top, right, bottom in regions:
+            region = frame[top:bottom, left:right]
+            region_height, region_width = region.shape[:2]
+            for turn in (0, 1, 2, 3):
+                for person in self.detect_upright(np.rot90(region, turn).copy(), threshold):
+                    self.restore_person(person, turn, region_width, region_height, left, top)
+                    people.append(person)
+        if not regions and motion is None:
+            for turn in (1, 3):
+                for person in self.detect_upright(np.rot90(frame, turn).copy(), threshold):
+                    self.restore_person(person, turn, width, height)
+                    people.append(person)
         keep = cv2.dnn.NMSBoxes([person['box'] for person in people], [person['score'] for person in people], threshold, 0.45)
         return [people[index] for index in np.asarray(keep).reshape(-1)]
+
+    @staticmethod
+    def restore_person(person, turn, width, height, left=0, top=0):
+        """Undo a crop rotation for every box corner and body landmark."""
+        def restore(point):
+            x, y = point[:2]
+            if turn == 1:
+                x, y = width - 1 - y, x
+            elif turn == 2:
+                x, y = width - 1 - x, height - 1 - y
+            elif turn == 3:
+                x, y = y, height - 1 - x
+            return [float(x + left), float(y + top)]
+        x, y, w, h = person['box']
+        corners = np.array([restore([x, y]), restore([x + w, y + h])])
+        minimum, maximum = corners.min(axis=0), corners.max(axis=0)
+        person['box'] = [*minimum.tolist(), *(maximum - minimum).tolist()]
+        person['hip'] = restore(person['hip'])
+        person['points'] = [restore(point) + [point[2]] for point in person['points']]
 
     def detect_upright(self, frame, threshold=0.28):
         """Return person boxes and 17 body landmarks in original image pixels."""
@@ -135,36 +155,70 @@ def choose_athlete(people, frame_shape, previous=None):
     return best
 
 
-def score_motion(previous_frame, frame, people):
-    """Compare person motion with the background after estimating camera movement."""
-    if previous_frame is None or previous_frame.shape != frame.shape or not people:
-        return
+def motion_field(previous_frame, frame):
+    """Remove camera pan and zoom from tracked feature movement."""
+    if previous_frame is None or previous_frame.shape != frame.shape:
+        return None
     ratio = min(1, 640 / frame.shape[1])
     size = (round(frame.shape[1] * ratio), round(frame.shape[0] * ratio))
     before = cv2.resize(cv2.cvtColor(previous_frame, cv2.COLOR_BGR2GRAY), size)
     after = cv2.resize(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), size)
     points = cv2.goodFeaturesToTrack(before, 800, 0.01, 5)
     if points is None or len(points) < 12:
-        return
+        return None
     moved, status, errors = cv2.calcOpticalFlowPyrLK(before, after, points, None)
     if moved is None:
-        return
+        return None
     valid = status.reshape(-1) == 1
     old, new = points.reshape(-1, 2)[valid], moved.reshape(-1, 2)[valid]
     if len(old) < 12:
-        return
+        return None
     transform, inliers = cv2.estimateAffinePartial2D(old, new, method=cv2.RANSAC, ransacReprojThreshold=3)
     if transform is None:
-        return
+        return None
     predicted = old @ transform[:, :2].T + transform[:, 2]
     residual = np.linalg.norm(new - predicted, axis=1)
     baseline = float(np.median(residual))
+    return dict(points=new, residual=residual, baseline=baseline, ratio=ratio, size=size)
+
+
+def motion_regions(field, frame_shape):
+    """Magnify the strongest moving cluster so a small airborne rider can be found."""
+    width, height = field['size']
+    points, residual = field['points'], field['residual']
+    moving = residual > max(3, field['baseline'] * 3)
+    mask = np.zeros((height, width), dtype=np.uint8)
+    for point in points[moving]:
+        cv2.circle(mask, tuple(np.rint(point).astype(int)), 12, 255, -1)
+    count, labels, stats, centres = cv2.connectedComponentsWithStats(mask)
+    ranked = []
+    for x, y, w, h, area in stats[1:]:
+        inside = moving & (points[:, 0] >= x) & (points[:, 0] <= x + w) & (points[:, 1] >= y) & (points[:, 1] <= y + h)
+        if inside.sum() < 5 or w * h > width * height * 0.4:
+            continue
+        centre = points[inside].mean(axis=0) / field['ratio']
+        if not frame_shape[1] * 0.15 < centre[0] < frame_shape[1] * 0.85:
+            continue
+        side = max(200 * frame_shape[1] / 960, max(w, h) / field['ratio'] * 1.1)
+        left, top = np.maximum([0, 0], centre - side / 2).astype(int)
+        right, bottom = np.minimum([frame_shape[1], frame_shape[0]], centre + side / 2).astype(int)
+        ranked.append((float(residual[inside].sum()), [left, top, right, bottom]))
+    ranked.sort(key=lambda item: item[0], reverse=True)
+    return [item[1] for item in ranked[:1]]
+
+
+def score_motion(previous_frame, frame, people, field=None):
+    """Score each person against the same camera compensated feature field."""
+    field = field if field is not None else motion_field(previous_frame, frame)
+    if field is None:
+        return
+    new, residual, baseline = field['points'], field['residual'], field['baseline']
     for person in people:
-        x, y, w, h = np.array(person['box']) * ratio
+        x, y, w, h = np.array(person['box']) * field['ratio']
         inside = (new[:, 0] >= x) & (new[:, 0] <= x + w) & (new[:, 1] >= y) & (new[:, 1] <= y + h)
         if inside.sum() >= 3:
             motion = max(0, float(np.percentile(residual[inside], 70)) - baseline)
-            person['motion'] = min(1, motion / max(2, size[1] * 0.025))
+            person['motion'] = min(1, motion / max(2, field['size'][1] * 0.025))
 
 
 def find_lip(frame, hip, box):

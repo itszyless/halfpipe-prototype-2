@@ -1,30 +1,35 @@
 # Testing record
 
-Date: 2026-10-12. Computer: Windows 11, Python 3.12.14, CPU inference. Dependency versions are pinned in requirements.txt.
+Date: 2026-10-12. Windows 11, Python 3.12.14, CPU inference. Requirements are pinned.
 
 ## Automated checks
 
-`python -m unittest -v`: 27 checks passed.
+`python -m unittest -v`: 36 checks passed.
 
-Checks cover horizontal/sloped/reversed lip points, signed gaps, invalid points and scales, upright/tilted known metre references, invalid reference lengths/directions, positive-sample grouping, scene cuts, missing evidence, isolated peak spikes, motion ranking that releases a spectator, local blue boundary fitting, range limits, saved JSON/CSV/review playback, stopping with partial results, and native review/correction/manual-entry actions.
+Tests cover signed pixel gaps, invalid coordinates/scales, upright and tilted known metre references, below-lip takeoffs, initial drop-ins, camera cuts, isolated spikes, weak wrong-person readings, separate riding sequences, strong single-frame fast-scan candidates, stationary peaks, crop rotation restoration, sparse motion features, blue-line fitting, source ranges, saved JSON/CSV/playback, cooperative stopping, and native review/calibration/correction/manual entry.
 
-The session tests use a synthetic clip and a mocked pose detector to isolate the pipeline. The window tests run Qt offscreen. These tests verify program behaviour and arithmetic, not detection or physical-height accuracy on unseen events.
+Synthetic video and mocked poses isolate pipeline behaviour. Qt tests run offscreen. These checks verify arithmetic and program behaviour, not event-wide detection accuracy or physical-height accuracy.
 
-## Real footage checks
+## Real footage
 
-- Original stream metadata: 1920 by 1080, about 29.97 frames per second, 167044 frames, about 5573.7 seconds.
-- Latest detector: first 45-second proxy run, 270 samples at 6 per second, 6 candidate groups. It completed with JSON, CSV, peak images, and readable marked playback. Visual checks included the airborne athlete where the earlier detector had selected a spectator. Some hip and lip marks remain weak or ambiguous.
-- Direct original URL: seconds 9 through 12, 2 samples per second. Completed with 6 full-resolution samples and one candidate. This checks direct-link reading as well as local-file reading.
-- Packaged Windows app: a 12-second real-video range was started through the actual window. It completed with 72 samples and one candidate, saved under LOCALAPPDATA/Lip/sessions. This checks the bundled model and runtime in the executable, rather than only the Python environment.
-- Earlier whole-event scan: 11148 samples at 2 per second, 6977 samples with an image gap, 291 unreviewed candidate groups, no recorded decode errors, completed in about 965 seconds. This scan predates the final motion/crop and peak-selection revision. Its results are retained locally and explicitly labelled earlier.
+- Original stream metadata: 1920 by 1080, about 29.97 fps, 167044 frames, approximately 5573.7 seconds.
+- Latest detailed first-run scan: 45 seconds, 270 samples at 6 per second, 6 candidates, 223 sampled image gaps, no recorded decode errors. Runtime about 47.1 seconds. The first-run spectator case was reproduced and a magnified moving crop recovered the airborne rider.
+- Latest whole-event scan: 11148 samples at 2 per second across 5573.7 seconds, 7084 sampled image gaps, 288 unreviewed candidates in 79 heuristic riding sequences. 158 intervals were skipped by takeoff/quality rules and saved in skipped.csv. 54 candidates have single-frame support. Recorded decode errors: 0. Processing runtime: 1608.2 seconds.
+- Whole-event samples were regrouped with the final takeoff and peak-quality checks; their snapshots, report, CSV, and skipped-interval CSV were regenerated from those stored detections. The pose/motion detector is the same revision throughout that pass.
+- The fast first-run samples and the detailed first-run scan both retained six candidate groups. This is a local sanity check, not a labelled evaluation of the whole event.
+- Original direct-link reading was tested at full resolution over seconds 9 through 12. An earlier app build also completed a 12-second real-video window test at 6 samples per second.
+- The final packaged Windows app completed a 45-second real-video scan through its actual window: 90 samples at 2 per second, 6 candidates, no recorded errors. It saved both jumps.csv and skipped.csv. The native white layout, hidden scan settings, run columns, SVG icons, and metre-reference controls were inspected in the actual window.
 
-The full-event test used a 960 by 540, 6-frame-per-second proxy. The final detector was not rerun over all 93 minutes during this session. No event footage or private session is included in the public source repository.
+Whole-event and detailed tests use a 960 by 540, 6-fps local proxy. Sampling can miss brief jumps and the exact apex. Processing the entire recording does not prove that every athlete or every jump was detected. Riding-sequence numbers do not identify athlete names or remove replays. Some reviewed contact images still showed wrong lip choices or people, so all automatic candidates remain unreviewed.
 
-## Packaging fix
+The earlier detector's complete scan is retained separately as Earlier full scan. It has 291 unreviewed candidates and is not the current result. Event media and personal session files are excluded from the public source repository.
 
-The first executable failed importing QtCore. Dependency collection had selected Poppler's ICU DLL from an unrelated tool's PATH. The final build restricts dependency search to Windows system directories during collection. Lip then opened successfully through its normal executable. The package contains no Poppler ICU replacement. The UI was inspected in the actual Windows window.
+## Windows build fix
 
-## What remains unvalidated
+The first executable failed while importing QtCore because dependency collection had selected an incompatible Poppler ICU DLL from another tool's PATH. The build now restricts dependency search to Windows system directories during collection. The packaged app opens through Lip.exe without that unrelated DLL. Its model and required runtime are bundled.
 
-No labelled ground-truth dataset was available. Precision, recall, peak timing error, and physical height error have not been measured. Metre arithmetic is tested with known geometry, but no confirmed local physical reference exists for the supplied recording. Candidate counts and evidence coverage must not be presented as accuracy. Automatic results require review. Camera calibration is still needed for reliable physical measurement.
+## Remaining validation
 
+There is no labelled ground truth for this recording. Precision, recall, athlete identity accuracy, peak timing error, and physical height error have not been measured. Candidate counts and measured-frame coverage are not accuracy percentages.
+
+The supplied 6.7 m height, 160 m length, 22 m width, 18-degree slope, and 81-degree wall inclination are recorded. They have not been matched to surveyed image correspondences or camera parameters. No real-event metre values have been filled in. Known-reference metre arithmetic passes its tests; physical event heights still require appropriate calibration.

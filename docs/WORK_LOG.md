@@ -39,3 +39,15 @@ Label at least several complete runs with athlete identity, visible hip/lip poin
 ## Final revision
 
 Renamed the desktop app to Lip and changed the interface to white with original SVG control icons. Fixed the packaged Qt startup failure by building with a restricted dependency search path. An unrelated Poppler ICU DLL had been bundled instead of allowing Qt to use the Windows ICU library. Added a centre crop and camera-compensated feature motion to reduce spectator selection. Retested the first real run and the original direct video link. Added a two-point local vertical reference for metre estimates, including tilted-reference tests.
+
+## Motion regions, takeoff checks, and supplied geometry
+
+Reproduced a wrong spectator selection in first-run frame 155. The original person passes missed the small sideways airborne rider. A camera-compensated moving crop with rotation passes recovered a rider hip near image coordinates (548, 129), while the standing spectator had near-zero residual motion. The first-run peak for that jump now marks the airborne rider. This is a verified example, not an event-wide accuracy result.
+
+Added a below-lip takeoff requirement, a cut boundary check, a six-second maximum above-lip group, and saved rejected segments. Initial drop-ins lack below-lip takeoff evidence and are left out. The fast scan preserves strong single-frame moving candidates with an explicit warning. Candidate gaps over 15 seconds start new riding-sequence numbers. These numbers do not identify people or remove replays.
+
+Stored the user-supplied course dimensions in reports. Added a 6.7 m reference default and explained why it still requires appropriate visible vertical endpoints. Simplified the white window to a compact status row, result table with run labels, and collapsed secondary settings. Added regression checks for drop-ins, scene cuts, sequence numbering, crop coordinate restoration, sparse motion, and fast-scan candidates.
+
+## Complete revised event pass
+
+Processed the complete 92.9-minute proxy with the moving-region detector: 11148 samples, 288 candidate groups after final regrouping, 158 skipped intervals, and 0 recorded decode errors. Saved run numbers, CSVs, images, and playback locally. Candidate contact images revealed remaining interior-stripe and person-selection errors. No claim of finding every real jump or producing validated event metre heights is made. Full counts and limitations are in TESTING.md.

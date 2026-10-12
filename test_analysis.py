@@ -10,7 +10,7 @@ import cv2
 import numpy as np
 
 from analysis import analyse, export_csv, find_jumps
-from vision import choose_athlete, find_lip
+from vision import PoseDetector, choose_athlete, find_lip, motion_field, motion_regions
 
 
 def person(x=160, y=100):
@@ -27,7 +27,7 @@ class JumpTests(unittest.TestCase):
         self.assertEqual(find_jumps(samples, 10), [])
 
     def test_brief_gap_is_bridged_and_long_gap_splits(self):
-        samples = [sample(0, 20), sample(0.1, 30), sample(0.2, None), sample(0.3, 25), sample(1, 20), sample(1.1, 30)]
+        samples = [sample(-0.1, -20), sample(0, 20), sample(0.1, 30), sample(0.2, None), sample(0.3, 25), sample(0.8, -20), sample(1, 20), sample(1.1, 30)]
         jumps = find_jumps(samples, 10)
         self.assertEqual(len(jumps), 2)
         self.assertEqual(jumps[0]['end'], 0.3)
@@ -35,17 +35,59 @@ class JumpTests(unittest.TestCase):
         self.assertFalse(jumps[0]['reviewed'])
 
     def test_camera_cut_splits_adjacent_candidates(self):
-        samples = [sample(0, 20), sample(0.1, 30), sample(0.2, 40, True), sample(0.3, 35)]
+        samples = [sample(-0.1, -20), sample(0, 20), sample(0.1, 30), sample(0.2, -20, True), sample(0.3, 40), sample(0.4, 35)]
         self.assertEqual(len(find_jumps(samples, 10)), 2)
 
     def test_single_spike_is_not_selected_as_peak(self):
-        samples = [sample(i / 10, gap) for i, gap in enumerate([20, 30, 500, 40, 20])]
+        samples = [sample(i / 10, gap) for i, gap in enumerate([-20, 20, 30, 500, 40, 20])]
         self.assertEqual(find_jumps(samples, 10)[0]['height_px'], 40)
 
     def test_missing_person_cannot_be_a_jump(self):
         item = sample(0, 20)
         item['person'] = None
         self.assertEqual(find_jumps([item], 6), [])
+
+    def test_initial_drop_in_is_rejected_but_later_takeoff_counts(self):
+        samples = [sample(i / 10, gap) for i, gap in enumerate([60, 40, 20, -30, -50, 20, 60, 30])]
+        rejected = []
+        jumps = find_jumps(samples, 10, rejected)
+        self.assertEqual(len(jumps), 1)
+        self.assertEqual(jumps[0]['start'], 0.5)
+        self.assertEqual(len(rejected), 1)
+
+    def test_cut_does_not_reuse_takeoff_from_previous_shot(self):
+        samples = [sample(0, -50), sample(0.1, 40, True), sample(0.2, 60)]
+        self.assertEqual(find_jumps(samples, 10), [])
+
+    def test_long_pause_starts_another_run(self):
+        samples = [sample(0, -30), sample(0.1, 20), sample(0.2, 40), sample(30, -30), sample(30.1, 20), sample(30.2, 40)]
+        jumps = find_jumps(samples, 10)
+        self.assertEqual([(item['run'], item['jump_in_run']) for item in jumps], [(1, 1), (2, 1)])
+
+    def test_standing_above_lip_is_not_a_jump(self):
+        samples = [sample(i, 60) for i in range(10)]
+        self.assertEqual(find_jumps(samples, 2), [])
+
+    def test_fast_scan_preserves_a_strong_single_frame_candidate(self):
+        items = [sample(0, -50), sample(0.5, 60), sample(1, -30)]
+        items[1]['person']['motion'] = 0.9
+        jumps = find_jumps(items, 2)
+        self.assertEqual(len(jumps), 1)
+        self.assertTrue(any('Only one sampled frame' in reason for reason in jumps[0]['reasons']))
+        self.assertEqual(find_jumps(items, 6), [])
+
+    def test_weak_wrong_person_gap_does_not_split_one_jump(self):
+        items = [sample(0, -30), sample(0.1, 20), sample(0.2, 40), sample(0.3, -40), sample(0.4, 60), sample(0.5, 20)]
+        items[3]['confidence'] = 0.1
+        self.assertEqual(len(find_jumps(items, 10)), 1)
+
+    def test_stationary_peak_is_rejected_and_logged(self):
+        items = [sample(0, -30), sample(0.1, 20), sample(0.2, 40)]
+        for item in items:
+            item['person']['motion'] = 0.01
+        rejected = []
+        self.assertEqual(find_jumps(items, 10, rejected), [])
+        self.assertEqual(len(rejected), 1)
 
 
 class VisionTests(unittest.TestCase):
@@ -69,6 +111,16 @@ class VisionTests(unittest.TestCase):
         athlete.update(score=0.65, motion=0.9)
         self.assertEqual(choose_athlete([spectator, athlete], (240, 320, 3), spectator)['hip'], athlete['hip'])
 
+    def test_crop_rotation_restores_hip_and_box(self):
+        detected = person(20, 30)
+        PoseDetector.restore_person(detected, 1, 200, 200, 430, 50)
+        self.assertEqual(detected['hip'], [599, 70])
+        self.assertGreater(detected['box'][2], 0)
+
+    def test_motion_region_needs_multiple_moving_features(self):
+        field = dict(size=(640, 360), points=np.array([[300., 100.]]), residual=np.array([20.]), baseline=0., ratio=2/3)
+        self.assertEqual(motion_regions(field, (540, 960, 3)), [])
+
 
 class SessionTests(unittest.TestCase):
     def setUp(self):
@@ -88,7 +140,7 @@ class SessionTests(unittest.TestCase):
 
     def run_session(self, **settings):
         with patch('analysis.PoseDetector') as detector:
-            detector.return_value.detect.return_value = [person()]
+            detector.return_value.detect.side_effect = [[person(160, 200)]] + [[person()]] * 30
             return analyse(str(self.video), model_path='unused-in-this-mocked-test', folder=self.folder / 'session', sample_rate=5, **settings)
 
     def test_range_export_and_review_video(self):
@@ -100,6 +152,7 @@ class SessionTests(unittest.TestCase):
         loaded = json.loads((self.folder / 'session/report.json').read_text())
         self.assertEqual(loaded['state'], 'complete')
         self.assertTrue((self.folder / 'session/jumps.csv').exists())
+        self.assertTrue((self.folder / 'session/skipped.csv').exists())
         capture = cv2.VideoCapture(str(self.folder / 'session/review.mp4'))
         self.assertTrue(capture.isOpened())
         self.assertEqual(int(capture.get(cv2.CAP_PROP_FRAME_COUNT)), 5)
