@@ -72,7 +72,7 @@ def image_icon(asset_name):
 def make_button(text, icon=None, primary=False):
     b = QPushButton(text)
     if icon:
-        b.setIcon(image_icon("settings-icon") if icon == "settings" else svg_icon(icon, "#ffffff" if primary else INK))
+        b.setIcon(image_icon("settings-icon") if icon == "settings" else QIcon(str(ROOT / "assets" / "home-icon.svg")) if icon == "home" else svg_icon(icon, "#ffffff" if primary else INK))
     b.setCursor(Qt.CursorShape.PointingHandCursor)
     b.setProperty("primary", primary)
     b.setMinimumHeight(34)
