@@ -114,3 +114,7 @@ On Home, use the **mouse wheel over the video** to zoom toward the cursor (up to
 ## Saved YOLO analysis cache
 
 The first successful detection saves a file next to the source video: `prototype.mov.pose-cache.json`. Subsequent app launches automatically reuse the cached YOLO skeleton coordinates and detected jump candidates, avoiding repeated 4K inference. The original full-resolution MOV is still used for video display and ruler zoom. Cache matching uses the video file size, modification time, detection stride, sensitivity and model version. Changing the video or either detection setting requires a fresh analysis. Ruler calibration changes do **not** invalidate the cache. **Run detection** reuses a valid cache; **Reanalyze** forces a full new scan and overwrites the cache. Keep the `.pose-cache.json` file if you want instant loading. The old per-video measurement `.json` is separate and unaffected.
+
+## 4K playback responsiveness
+
+Playback now reads frames sequentially instead of seeking for every frame, and renders a downscaled video preview when unzoomed. Zoomed inspection still draws the original 4K frame. When no matching analysis cache exists, the first expensive YOLO scan starts **only** after clicking Run detection, rather than starting automatically during video playback. On subsequent launches a matching cache loads automatically. Playback is still based on OpenCV decoding on the GUI thread and can remain slow with demanding MOV codecs; the changes reduce work but do not guarantee real-time playback on every PC.
