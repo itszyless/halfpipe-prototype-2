@@ -1,124 +1,103 @@
-## Indoor prototype video (October 2026)
+# Halfpipe Jump Measurement Prototype
 
-The default footage is now the local **`prototypev1.mp4`**. Place it in `video/prototypev1.mp4` (or `videos/prototypev1.mp4`) within this repository. The app no longer starts a Calgary download. You can also click **Change video** to locate your file anywhere on the computer.
+A Python desktop prototype by **Oliver Weiner** for testing automatic jump detection and estimated jump heights from video.
 
-The 23-second portrait test has a floor-level blue reference line and a vertical ruler near the right edge. The existing pose-based hip detector and jump-candidate workflow are retained, and the line detector now searches the bottom portion of the image. **This is experimental and not verified against the real video results.** The ruler is not automatically interpreted: measurements in metres still need reliable scale calibration. Because perspective matters, a ruler at a different depth from the person can distort measurements.
+The first test uses a short video of Oliver's brother jumping beside a ruler and a blue floor reference line. The goal is to explore techniques that could later be adapted to freeski and snowboard halfpipe footage.
 
-Do not commit the video to this public repository unless you have permission to share the footage. `video/` and `*.mp4` are gitignored.
+> **Prototype status:** Experimental. Person tracking, jump markers and height estimates can be wrong. This is a proof of concept, not a certified measurement tool.
 
-> **Update:** The latest code loads the Calgary video automatically (downloads it to the ignored `video/` folder on first launch) and includes pose-based automatic candidate detection with YOLO. It uses a background worker so the UI remains responsive. The first AI analysis downloads `yolov8n-pose.pt`; internet access is required. Run `pip install -r requirements.txt` again after pulling. A video can be loaded manually if the hosted link is inaccessible. Orange markers are AI-generated **unverified candidates**, not guaranteed jumps; a physically calibrated camera is still required for metre estimates. Inter is used when installed on the computer, otherwise Segoe UI. Basic UI fade transitions have been added. Large or long videos may analyze slowly on CPU.
+## Requirements
 
-# Prototype V1.2 — Halfpipe Jump Measurement
+- Windows 10 or 11 (the desktop app was developed for Windows)
+- Python 3.12
+- Internet access for the first YOLO model download
+- A local test video
 
-**Made by Oliver Weiner, 2EHIF.** Independent prototype-2 for reviewing freeski/snowboard halfpipe footage.
+## Setup
 
-## Features
+Open PowerShell in the project folder and run:
 
-- Simple white PySide6 desktop interface, Inter font (when locally installed) with Home and scrollable Settings.
-- Load an existing MP4/MOV/MKV/AVI from disk.
-- Play/pause, move forward/backward exactly one decoded frame, and scrub the complete timeline.
-- Mark two points along the **blue lip line**, select the skier's **hip centre** at the jump's peak, and save a jump.
-- Green timeline markers for saved measurements, orange markers for *experimental* automatic jump candidates.
-- Click a marker to jump to its video frame and inspect the reported pixels/metres.
-- Enter **pixels per metre** under Settings. With no scale, results are displayed as pixels, **never fake metres**.
-- Sidecar JSON for saved jumps and calibration, alongside the video.
-- Experimental Lucas–Kanade optical-flow candidate discovery initiated by clicking a skier's hip on the current frame.
+```powershell
+git clone https://github.com/itszyless/halfpipe-prototype-2.git
+cd halfpipe-prototype-2
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
 
-## Windows setup from scratch — VS Code
+If you already cloned the project, use `git pull` instead of cloning it again.
 
-1. Install [Python](https://www.python.org/downloads/) (3.11 or 3.12 recommended). Enable **Add python.exe to PATH** during setup. On Windows, the Python launcher \`py\` is also fine.
-2. Install [Visual Studio Code](https://code.visualstudio.com/) and the **Python** extension from Microsoft.
-3. Install [Git for Windows](https://git-scm.com/download/win) or use VS Code's **Git: Clone** UI.
-4. Open a terminal in VS Code (Terminal → New Terminal) and run:
+## Add the video
 
-   \`\`\`powershell
-   git clone https://github.com/itszyless/halfpipe-prototype-2.git
-   cd halfpipe-prototype-2
-   py -3 -m venv .venv
-   .\.venv\Scripts\Activate.ps1
-   python -m pip install --upgrade pip
-   pip install -r requirements.txt
-   python app.py
-   \`\`\`
+Put the video in the `video` folder:
 
-   If Windows blocks PowerShell activation, either run
-   \`Set-ExecutionPolicy -Scope Process Bypass\` first, or skip activation:
-   \`.\.venv\Scripts\python.exe -m pip install -r requirements.txt\` and
-   \`.\.venv\Scripts\python.exe app.py\`.
-   
-5. In VS Code choose **Python: Select Interpreter** → \`.venv\Scripts\python.exe\`.
+```text
+halfpipe-prototype-2/
+├── app.py
+├── automatic.py
+├── measurement.py
+├── requirements.txt
+└── video/
+    ├── prototypev1.mp4
+    └── prototype.mov       # optional higher-resolution version
+```
 
-6. Obtain the source video from the team (it is **not** included in GitHub). Use **Open video** to load the local MP4.
+The app prefers **`video/prototypev1.mp4`**. If this file is missing, it tries `prototype.mov`. Use **Change video** to open another recording.
 
-## Recommended presentation workflow
+The footage is not included in the public repository. Please only share recordings when everyone shown has agreed.
 
-1. Open the local Calgary Camera 3 video.
-2. Scrub to a clear frame with the athlete above the visible lip.
-3. Click **Set lip line** and click two points on the relevant blue edge.
-4. Click **Select hip** and click the athlete's hip centre.
-5. If you have a **verified reference distance at the athlete's depth in that camera shot**, enter the measured scale in Settings (\`pixels_per_metre = reference_pixels / reference_metres\`).
-6. Return Home and **Save jump**. The timeline displays a green dot.
-7. Click the saved dot to review its value; repeat for jumps.
-8. Optionally click **Find candidates** after selecting the hip to generate **unverified** orange markers, and review them manually.
+## Start
 
-**Important:** A single static scale is insufficient across camera zoom/pan/perspective changes; recalibrate where appropriate. The current prototype performs vertical *image-coordinate* distance measurements, not a full 3D world-space reconstruction. A true broadcast-grade system will require camera calibration and stable tracking of the athlete's hip and lip, potentially pose estimation plus camera-motion compensation. In the first version, motion detection is not equivalent to verified jump segmentation.
+```powershell
+.\.venv\Scripts\python.exe app.py
+```
 
-## Footage and external calibration background
+After an update:
 
-Team-provided file:
-\`https://s3.eu-central-1.wasabisys.com/judges/2025_26/freeski/Calgary%20(HP)/FK%20Finals%20-%201%20-%20Camera3%20-%20[10-30-18]%20[12-03-12].mp4\`
+```powershell
+git pull
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe app.py
+```
 
-FIS's February 2025 Calgary World Cup results list the WinSport halfpipe wall height as **6.7 m**, halfpipe width as **22 m**, and length as **160 m** (2025 event). This is useful *physical-world context*, **not** enough to assert a pixel scale for this specific 2025/26 video.
+## Using the prototype
 
-Source: https://medias3.fis-ski.com/pdf/2025/FS/8076/2025FS8076RLF.pdf
+1. Open the default video or select your own.
+2. Use **Play**, the timeline or **Left/Right arrow keys** to move through frames. Press **Space** to pause or resume.
+3. The app uses **YOLO pose detection** to track the person and propose jump positions. The visible skeleton and guides depend on successful tracking.
+4. Select **Calibrate ruler** and choose two ruler marks with a known distance. The default is **50 cm (0.50 m)**, adjustable in Settings.
+5. Use the **mouse wheel** to zoom, **right-click and drag** to pan, and **left-click** to choose the marks. **Reset zoom** returns to the full view. If right-drag is unreliable, toggle **Pan** and left-drag, then turn Pan off before selecting marks.
+6. Review the suggested jump markers and heights manually. The results are estimates.
 
-The filename suggests a **2025/26 Calgary finals, Camera 3** video but the downloaded video and frame metadata have not been inspected in this environment.
+## What is saved?
 
-## Data format
+- Each video can have its own measurements JSON file.
+- YOLO analysis is cached separately in a `.pose-cache.json` file next to the video.
+- **Run detection** reuses a matching cache when available; **Reanalyze** runs the full analysis again.
+- Changing the recording or detection settings can require a new analysis.
+- Keep the cache file if you want to avoid repeating an expensive scan.
 
-Each video generates \`yourfile.mp4.prototype-v1.2.json\`. This is ignored by Git. Jumps have the form:
+## How it works
 
-\`\`\`json
-{"frame": 240, "height_m": null, "pixel_height": 83.5, "source": "manual"}
-\`\`\`
+- **OpenCV** reads the video frames.
+- **Ultralytics YOLOv8 pose** finds body keypoints, including ankles and hips.
+- Python and **NumPy** track vertical movement and estimate jump peaks.
+- The reference line and ruler provide visual and approximate physical scale information.
+- **PySide6** provides the desktop interface, playback controls, zoom, calibration and timeline.
 
-\`null\` metre heights mean no verified pixel-to-metre calibration was provided. Automatic candidates have no measurement values until verified.
+## Current limitations
 
-## Known limitations / next steps
+The detection can miss real jumps or mistake small steps for jumps. Ankles may be misplaced when the subject moves quickly. The blue tape detector is experimental. A ruler at a different depth from the athlete can distort the metres calculation. The camera angle, calibration and video quality all affect accuracy, and 4K playback can be slow. The project still needs validation against manually measured jumps.
 
-- Optical-flow detection may return false candidates (zoom, camera movement, skier occlusion, trick rotation). Only estimates candidate **peak frames**, not complete flights.
-- The hip is manually marked for each measured frame; it is not currently maintained per-frame by a pose model.
-- Lip reference is a line, assuming the two marked points represent the relevant visible lip; curved/oblique pipe geometry may need a more complex projection.
-- An appropriate camera calibration is needed for geometrically valid metre measurements.
-- Playback uses OpenCV frame seeking, which is generally accurate but may be slow for long high-resolution encoded video.
-- The UI uses the Inter font when installed; the bundled code falls back to Segoe UI when it is not.
-- No physical-video end-to-end tests have been performed yet. The test script checks calculation helpers only.
+## Project files
 
-## Quick checks
+| File | Purpose |
+| --- | --- |
+| `app.py` | Desktop interface, video playback, calibration and visualization |
+| `automatic.py` | YOLO tracking, automatic jump candidates and analysis cache |
+| `measurement.py` | Height calculations and jump data structures |
+| `requirements.txt` | Python dependencies |
+| `tests/` | Measurement tests |
 
-\`\`\`powershell
-python -m compileall -q app.py measurement.py
-python -m unittest discover -s tests -v
-\`\`\`
-
-### Ruler calibration and floor tape (indoor clip)
-
-In the Home view click **Calibrate ruler**. Click two marks **exactly 1.00 metre apart** on the yellow ruler, first and second, in the video frame. The measured distance sets pixels per metre and enables *approximate* metre readouts. If the ruler does not show two identifiable marks that far apart, do not guess; leave the measurement uncalibrated. The blue overlay is fixed to the pale floor tape detected near the lower edge of the first video frame. A separate standing-foot reference is used to calculate *jump displacement*: the foreground tape is not at the person's feet and therefore cannot be used as the foot takeoff y coordinate. The guide line toward the ruler is visual, not a full perspective correction. YOLO ankle detection can remain inaccurate when feet blur or leave the frame, so verify peak frames manually.
-
-## Zoomable ruler calibration (latest)
-
-On Home, use the **mouse wheel over the video** to zoom toward the cursor (up to 12×); **right-click and drag** to pan; choose **Reset zoom** to return to the full video. In Settings, enter the *actual distance in metres* between two readable marks on your ruler (for example 0.10 m for 10 cm). Back on Home, choose **Calibrate ruler**, zoom into the ruler and left-click those two marks. The coordinates are mapped back to the original frame, so zoom does not distort the calibration. A zoomed ruler offers more precise clicking, but cannot recover detail absent in the original recording.
-
-**Limitations:** YOLO foot/ankle tracking and jumping peak estimation are not validated to guaranteed accuracy. A pixel-to-metre calibration can still be biased by depth/perspective. Confirm a few jump heights manually before treating results as reliable. The portrait indoor video is a test, not broadcast-grade halfpipe measurement.
-
-## Saved YOLO analysis cache
-
-The first successful detection saves a file next to the source video: `prototype.mov.pose-cache.json`. Subsequent app launches automatically reuse the cached YOLO skeleton coordinates and detected jump candidates, avoiding repeated 4K inference. The original full-resolution MOV is still used for video display and ruler zoom. Cache matching uses the video file size, modification time, detection stride, sensitivity and model version. Changing the video or either detection setting requires a fresh analysis. Ruler calibration changes do **not** invalidate the cache. **Run detection** reuses a valid cache; **Reanalyze** forces a full new scan and overwrites the cache. Keep the `.pose-cache.json` file if you want instant loading. The old per-video measurement `.json` is separate and unaffected.
-
-## 4K playback responsiveness
-
-Playback now reads frames sequentially instead of seeking for every frame, and renders a downscaled video preview when unzoomed. Zoomed inspection still draws the original 4K frame. When no matching analysis cache exists, the first expensive YOLO scan starts **only** after clicking Run detection, rather than starting automatically during video playback. On subsequent launches a matching cache loads automatically. Playback is still based on OpenCV decoding on the GUI thread and can remain slow with demanding MOV codecs; the changes reduce work but do not guarantee real-time playback on every PC.
-
-## Default video and optional 4K footage
-
-The app now prefers `video/prototypev1.mp4`, falling back to `prototype.mov` if no MP4 is present. Both formats can be opened with **Change video**. The lighter MP4 automatically starts loading its cached YOLO pose results, or building them once if none exist. The 4K MOV does **not** start YOLO automatically; click **Run detection** to load/build its own per-video cache. YOLO skeletons and foot measurement overlays appear only after tracking data is loaded. The old `prototypev1.mp4` measurement JSON is retained separately from the MOV.
+**Author:** Oliver Weiner  
+**Project:** Halfpipe jump height detection prototype  
+**Technology:** Python, PySide6, OpenCV, YOLOv8, NumPy
