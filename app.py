@@ -572,6 +572,23 @@ class App(QMainWindow):
                 metres=metres_from_pixels(px,self.pixels_per_metre)
                 self.measure.setText(f"{metres:.2f} m · estimated" if metres is not None else f"{px:.0f} px · uncalibrated")
 
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Left:
+            self.previous_frame()
+            event.accept()
+            return
+        if event.key() == Qt.Key.Key_Right:
+            self.timer.stop()
+            self.play_btn.setIcon(svg_icon("play"))
+            self.next_frame()
+            event.accept()
+            return
+        if event.key() == Qt.Key.Key_Space:
+            self.toggle_play()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
     def previous_frame(self):
         self.timer.stop()
         self.play_btn.setIcon(svg_icon("play"))
@@ -631,7 +648,7 @@ class App(QMainWindow):
         existing={j.frame for j in self.jumps}
         self.jumps.extend(j for j in proposals if j.frame not in existing)
         self.jumps.sort(key=lambda x:x.frame)
-        self.notice.setText(f"Found {len(proposals)} automatic candidates. Review orange markers; metres need calibration.")
+        self.notice.setText(f"Found {len(proposals)} jump candidates. Review each peak; metres require calibration.")
         self.scan_btn.setEnabled(True)
         self.update_display()
         self.save_sidecar()
