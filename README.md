@@ -118,3 +118,7 @@ The first successful detection saves a file next to the source video: `prototype
 ## 4K playback responsiveness
 
 Playback now reads frames sequentially instead of seeking for every frame, and renders a downscaled video preview when unzoomed. Zoomed inspection still draws the original 4K frame. When no matching analysis cache exists, the first expensive YOLO scan starts **only** after clicking Run detection, rather than starting automatically during video playback. On subsequent launches a matching cache loads automatically. Playback is still based on OpenCV decoding on the GUI thread and can remain slow with demanding MOV codecs; the changes reduce work but do not guarantee real-time playback on every PC.
+
+## Default video and optional 4K footage
+
+The app now prefers `video/prototypev1.mp4`, falling back to `prototype.mov` if no MP4 is present. Both formats can be opened with **Change video**. The lighter MP4 automatically starts loading its cached YOLO pose results, or building them once if none exist. The 4K MOV does **not** start YOLO automatically; click **Run detection** to load/build its own per-video cache. YOLO skeletons and foot measurement overlays appear only after tracking data is loaded. The old `prototypev1.mp4` measurement JSON is retained separately from the MOV.
