@@ -12,7 +12,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-from PySide6.QtCore import Qt, QTimer, Signal, QThread, QPointF, QRectF, QPropertyAnimation, QEasingCurve
+from PySide6.QtCore import Qt, QTimer, Signal, QThread, QPointF, QRectF, QSize, QPropertyAnimation, QEasingCurve
 from PySide6.QtGui import QFont, QFontDatabase, QIcon, QImage, QPainter, QPen, QColor, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QWidget, QMainWindow, QFileDialog, QHBoxLayout, QVBoxLayout,
@@ -35,7 +35,7 @@ BORDER = "#282d36"
 # Inline, scale-independent line icons.
 ICONS = {
     "home": '<path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1Z"/><path d="M9 21v-8h6v8"/>',
-    "settings": '<path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"/><path d="M19.4 15a1.8 1.8 0 0 0 .3 2l-1.8 1.8a1.8 1.8 0 0 0-2-.3 1.8 1.8 0 0 0-1 1.6V21h-5v-.9a1.8 1.8 0 0 0-1-1.6 1.8 1.8 0 0 0-2 .3L5.1 17a1.8 1.8 0 0 0 .3-2A1.8 1.8 0 0 0 3.8 14H3v-4h.8a1.8 1.8 0 0 0 1.6-1 1.8 1.8 0 0 0-.3-2l1.8-1.8a1.8 1.8 0 0 0 2 .3 1.8 1.8 0 0 0 1-1.6V3h5v.9a1.8 1.8 0 0 0 1 1.6 1.8 1.8 0 0 0 2-.3L19.7 7a1.8 1.8 0 0 0-.3 2 1.8 1.8 0 0 0 1.6 1H22v4h-1a1.8 1.8 0 0 0-1.6 1Z"/>',
+    "settings": '<path d="M12 2.5 14 3l1 2.2 2.2.9 2.2-.8 2.4 2.4-.8 2.2.9 2.2 2.2 1v3.4l-2.2 1-1 2.2.8 2.2-2.4 2.4-2.2-.8-2.2.9-1 2.2h-3.4l-1-2.2-2.2-.9-2.2.8-2.4-2.4.8-2.2-.9-2.2-2.2-1v-3.4l2.2-1 .9-2.2-.8-2.2 2.4-2.4 2.2.8 2.2-.9 1-2.2Z" transform="translate(2.1 2.1) scale(.82)"/><circle cx="12" cy="12" r="3.4"/>',
     "play": '<path d="m8 5 11 7-11 7Z"/>',
     "pause": '<path d="M8 5v14M16 5v14"/>',
     "prev": '<path d="M6 5v14M18 5 9 12l9 7Z"/>',
@@ -251,33 +251,38 @@ class App(QMainWindow):
 
         sidebar = QFrame()
         sidebar.setObjectName("side")
-        sidebar.setFixedWidth(170)
+        sidebar.setFixedWidth(84)
         side = QVBoxLayout(sidebar)
-        side.setContentsMargins(18, 25, 18, 20)
+        side.setContentsMargins(14, 23, 14, 18)
         side.setSpacing(4)
 
-        brand = QLabel("HALFPIPE")
+        brand = QLabel("H")
         brand.setObjectName("brand")
+        brand.setAlignment(Qt.AlignmentFlag.AlignCenter)
         side.addWidget(brand)
-        version = QLabel("PROTOTYPE  /  01.3")
+        version = QLabel("V1.3")
         version.setObjectName("version")
+        version.setAlignment(Qt.AlignmentFlag.AlignCenter)
         side.addWidget(version)
         side.addSpacing(38)
 
-        self.home_btn = make_button("  Overview", "home")
-        self.settings_btn = make_button("  Settings", "settings")
+        self.home_btn = make_button("", "home")
+        self.settings_btn = make_button("", "settings")
         for button in (self.home_btn, self.settings_btn):
             button.setObjectName("navButton")
-            button.setMinimumHeight(42)
-            side.addWidget(button)
+            button.setFixedSize(54, 54)
+            button.setIconSize(QSize(27, 27))
+            side.addWidget(button, alignment=Qt.AlignmentFlag.AlignHCenter)
         side.addStretch()
-        side.addWidget(textlabel("Oliver Weiner  ·  2EHIF", 10, MUTED))
+        
         shell.addWidget(sidebar)
 
         self.pages = QStackedWidget()
         shell.addWidget(self.pages, 1)
         self.build_home()
         self.build_settings()
+        self.home_btn.setToolTip("Home")
+        self.settings_btn.setToolTip("Settings")
         self.home_btn.clicked.connect(lambda: self.show_page(0))
         self.settings_btn.clicked.connect(lambda: self.show_page(1))
         self.show_page(0)
@@ -383,6 +388,7 @@ class App(QMainWindow):
         self.scale.setValue(0)
         self.scale.valueChanged.connect(self.scale_changed)
         self.scale.setMaximumWidth(460)
+        self.scale.lineEdit().setTextMargins(20, 0, 8, 0)
         outer.addWidget(self.scale)
         outer.addWidget(textlabel("Use a known-length object/segment in the same depth plane as the athlete. Recalibrate after zoom.",11,MUTED))
         outer.addSpacing(14)
@@ -393,6 +399,7 @@ class App(QMainWindow):
         self.duration.setValue(4)
         self.duration.setSuffix(" frames")
         self.duration.setMaximumWidth(460)
+        self.duration.lineEdit().setTextMargins(20, 0, 8, 0)
         outer.addWidget(self.duration)
         outer.addWidget(textlabel("Candidate sensitivity",13,INK,True))
         self.sensitivity=QSlider(Qt.Orientation.Horizontal)
@@ -704,13 +711,13 @@ QPushButton { background:#191c23; border:1px solid #303540; border-radius:9px; p
 QPushButton:hover { background:#2b303a; }
 QPushButton:pressed { background:#373d4a; }
 QPushButton:disabled { color:#666e7e; }
-QPushButton#navButton { background:transparent; border:none; text-align:left; padding-left:11px; font-weight:500; }
+QPushButton#navButton { background:transparent; border:none; padding:0; }
 QPushButton#navButton:hover { background:#20242d; }
 QPushButton#navButton[selected="true"] { color:#fff; background:#282d37; font-weight:600; }
 QPushButton#transport { padding:4px; border-color:#303540; }
 QPushButton[primary="true"] { background:#e9ecf4; border-color:#e9ecf4; color:#151923; font-weight:600; }
 QPushButton[primary="true"]:hover { background:#cfd7e6; }
-QDoubleSpinBox,QSpinBox { background:#171a21; color:#fafbff; border:1px solid #373c48; border-radius:9px; min-height:42px; padding-left:19px; padding-right:37px; selection-background-color:#4b5771; }
+QDoubleSpinBox,QSpinBox { background:#171a21; color:#fafbff; border:1px solid #373c48; border-radius:9px; min-height:42px; padding-left:24px; padding-right:37px; selection-background-color:#4b5771; }
 QDoubleSpinBox::up-button,QSpinBox::up-button { subcontrol-origin:border; subcontrol-position:top right; width:29px; background:#272c36; border-left:1px solid #444c5b; border-top-right-radius:8px; }
 QDoubleSpinBox::down-button,QSpinBox::down-button { subcontrol-origin:border; subcontrol-position:bottom right; width:29px; background:#272c36; border-left:1px solid #444c5b; border-bottom-right-radius:8px; }
 QDoubleSpinBox::up-arrow,QSpinBox::up-arrow { image:url(assets/arrow-up.svg); width:10px; height:10px; }
