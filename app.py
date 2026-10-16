@@ -26,11 +26,11 @@ ROOT = Path(__file__).resolve().parent
 SAVE_SUFFIX = ".prototype-v1.2.json"
 VIDEO_URL = "https://s3.eu-central-1.wasabisys.com/judges/2025_26/freeski/Calgary%20(HP)/FK%20Finals%20-%201%20-%20Camera3%20-%20[10-30-18]%20[12-03-12].mp4"
 VIDEO_FILE = ROOT / "video" / "Calgary-Finals-Camera3.mp4"
-WHITE = "#ffffff"
-INK = "#151b2b"
-MUTED = "#87909e"
-ACCENT = "#3969ec"
-BORDER = "#e8ecf2"
+WHITE = "#0c0e12"
+INK = "#f3f5f8"
+MUTED = "#9aa2b1"
+ACCENT = "#c4cce0"
+BORDER = "#282d36"
 
 # Inline, scale-independent line icons.
 ICONS = {
@@ -109,7 +109,7 @@ class VideoCanvas(QWidget):
     def paintEvent(self, event):
         p=QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.fillRect(self.rect(), QColor("#18202c"))
+        p.fillRect(self.rect(), QColor("#080a0e"))
         if self.frame is None:
             p.setPen(QColor("#aeb6c8"))
             p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "Waiting for video")
@@ -153,7 +153,7 @@ class JumpTimeline(QWidget):
         p=QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         left,right=16,self.width()-16
-        p.setPen(QPen(QColor("#e5eaf2"),7,Qt.PenStyle.SolidLine,Qt.PenCapStyle.RoundCap))
+        p.setPen(QPen(QColor("#303541"),7,Qt.PenStyle.SolidLine,Qt.PenCapStyle.RoundCap))
         p.drawLine(left,23,right,23)
         pos=lambda frame:left+(right-left)*frame/max(1,self.total-1)
         p.setPen(QPen(QColor(ACCENT),7,Qt.PenStyle.SolidLine,Qt.PenCapStyle.RoundCap))
@@ -224,7 +224,7 @@ class App(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Prototype V1.3 — Halfpipe")
-        self.setFixedSize(960, 610)
+        self.setFixedSize(1050, 680)
         self.setWindowFlag(Qt.WindowType.WindowMaximizeButtonHint, False)
         self.cap=None
         self.path=None
@@ -381,7 +381,7 @@ class App(QMainWindow):
         self.scale.setSuffix(" px / m")
         self.scale.setValue(0)
         self.scale.valueChanged.connect(self.scale_changed)
-        self.scale.setMaximumWidth(400)
+        self.scale.setMaximumWidth(460)
         outer.addWidget(self.scale)
         outer.addWidget(textlabel("Use a known-length object/segment in the same depth plane as the athlete. Recalibrate after zoom.",11,MUTED))
         outer.addSpacing(14)
@@ -391,13 +391,13 @@ class App(QMainWindow):
         self.duration.setRange(1,30)
         self.duration.setValue(4)
         self.duration.setSuffix(" frames")
-        self.duration.setMaximumWidth(400)
+        self.duration.setMaximumWidth(460)
         outer.addWidget(self.duration)
         outer.addWidget(textlabel("Candidate sensitivity",13,INK,True))
         self.sensitivity=QSlider(Qt.Orientation.Horizontal)
         self.sensitivity.setRange(1,100)
         self.sensitivity.setValue(45)
-        self.sensitivity.setMaximumWidth(400)
+        self.sensitivity.setMaximumWidth(460)
         outer.addWidget(self.sensitivity)
         outer.addWidget(textlabel("Pose detection finds the hip without clicking. Blue-lip and jump results are estimates.",11,MUTED))
         outer.addSpacing(14)
@@ -681,84 +681,61 @@ class App(QMainWindow):
 
 def main():
     app=QApplication([])
+    if os.name == "nt":
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("OliverWeiner.Halfpipe")
+        except Exception:
+            pass
     app.setStyle("Fusion")
     font_file=ROOT/"assets"/"Inter-Regular.ttf"
     if font_file.exists():
         QFontDatabase.addApplicationFont(str(font_file))
     app.setFont(QFont("Inter" if "Inter" in QFontDatabase.families() else "Segoe UI", 10))
     app.setStyleSheet("""
-        QWidget {
-            background: #ffffff;
-            color: #202630;
-            font-family: Inter, 'Segoe UI', sans-serif;
-            font-size: 12px;
-        }
-        QFrame#side {
-            background: #f7f8fa;
-            border-right: 1px solid #e7e9ed;
-        }
-        QFrame#side QLabel { background: transparent; }
-        QLabel#brand {
-            color: #202630;
-            font-size: 17px;
-            font-weight: 800;
-            letter-spacing: 1px;
-        }
-        QLabel#version {
-            color: #969daa;
-            font-size: 10px;
-            letter-spacing: 1px;
-        }
-        QLabel#status { color: #8993a1; font-size: 11px; }
-        QPushButton {
-            background: #ffffff;
-            border: 1px solid #e5e8ed;
-            border-radius: 7px;
-            padding: 7px 12px;
-            color: #394252;
-            font-size: 12px;
-        }
-        QPushButton:hover { background: #f1f4f7; }
-        QPushButton:disabled { color: #b3b9c3; }
-        QPushButton#navButton {
-            background: transparent;
-            border: none;
-            text-align: left;
-            padding-left: 10px;
-            font-weight: 500;
-        }
-        QPushButton#navButton:hover { background: #eceff3; }
-        QPushButton#navButton[selected="true"] {
-            color: #1b2535;
-            background: #e7ebf1;
-            font-weight: 600;
-        }
-        QPushButton#transport { padding: 4px; border-color: #e6e9ef; }
-        QPushButton[primary="true"] {
-            background: #222c3a;
-            color: white;
-            border-color: #222c3a;
-            font-weight: 600;
-        }
-        QPushButton[primary="true"]:hover { background: #374558; }
-        QDoubleSpinBox, QSpinBox {
-            background: #ffffff;
-            border: 1px solid #dfe3ea;
-            border-radius: 7px;
-            min-height: 34px;
-            padding-left: 14px;
-            padding-right: 12px;
-        }
-        QScrollArea { border: none; }
-        QSlider::groove:horizontal { height: 4px; background: #e4e8ee; border-radius: 2px; }
-        QSlider::handle:horizontal { width: 16px; margin: -6px 0; background: #303c4f; border-radius: 8px; }
-        QCheckBox { spacing: 10px; }
+QWidget { background:#0c0e12; color:#e8eaf0; font-family:Inter,'Segoe UI',sans-serif; font-size:12px; }
+QFrame#side { background:#111318; border-right:1px solid #292c35; }
+QFrame#side QLabel { background:transparent; }
+QLabel#brand { color:#fafbff; font-size:17px; font-weight:700; letter-spacing:1px; }
+QLabel#version { color:#8a92a3; font-size:10px; }
+QLabel#status { color:#9aa1b0; font-size:11px; }
+QPushButton { background:#191c23; border:1px solid #303540; border-radius:9px; padding:8px 12px; color:#e9eaf0; }
+QPushButton:hover { background:#2b303a; }
+QPushButton:pressed { background:#373d4a; }
+QPushButton:disabled { color:#666e7e; }
+QPushButton#navButton { background:transparent; border:none; text-align:left; padding-left:11px; font-weight:500; }
+QPushButton#navButton:hover { background:#20242d; }
+QPushButton#navButton[selected="true"] { color:#fff; background:#282d37; font-weight:600; }
+QPushButton#transport { padding:4px; border-color:#303540; }
+QPushButton[primary="true"] { background:#e9ecf4; border-color:#e9ecf4; color:#151923; font-weight:600; }
+QPushButton[primary="true"]:hover { background:#cfd7e6; }
+QDoubleSpinBox,QSpinBox { background:#171a21; color:#fafbff; border:1px solid #373c48; border-radius:9px; min-height:42px; padding-left:19px; padding-right:37px; selection-background-color:#4b5771; }
+QDoubleSpinBox::up-button,QSpinBox::up-button { subcontrol-origin:border; subcontrol-position:top right; width:29px; background:#272c36; border-left:1px solid #444c5b; border-top-right-radius:8px; }
+QDoubleSpinBox::down-button,QSpinBox::down-button { subcontrol-origin:border; subcontrol-position:bottom right; width:29px; background:#272c36; border-left:1px solid #444c5b; border-bottom-right-radius:8px; }
+QDoubleSpinBox::up-arrow,QSpinBox::up-arrow { image:url(assets/arrow-up.svg); width:10px; height:10px; }
+QDoubleSpinBox::down-arrow,QSpinBox::down-arrow { image:url(assets/arrow-down.svg); width:10px; height:10px; }
+QScrollArea { border:none; background:#0c0e12; }
+QScrollBar:vertical { background:#13161c; width:7px; }
+QScrollBar::handle:vertical { background:#353c4a; border-radius:3px; min-height:20px; }
+QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical { height:0; }
+QSlider::groove:horizontal { height:5px; background:#323947; border-radius:2px; }
+QSlider::handle:horizontal { width:17px; margin:-6px 0; background:#dce3f1; border-radius:8px; }
+QCheckBox { spacing:12px; }
     """)
     win=App()
     icon=ROOT/"assets"/"app-icon.svg"
     if icon.exists():
         win.setWindowIcon(QIcon(str(icon)))
     win.show()
+    if os.name == "nt":
+        try:
+            import ctypes
+            flag = ctypes.c_int(1)
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(int(win.winId()), 20, ctypes.byref(flag), 4)
+            color = ctypes.c_int(0x00120F0C)
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(int(win.winId()), 35, ctypes.byref(color), 4)
+        except Exception:
+            pass
     app.exec()
 
 if __name__=="__main__":
