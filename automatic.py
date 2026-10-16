@@ -1,112 +1,115 @@
-"""Automatic pose and blue-lip jump candidate discovery.
+"""Experimental jump detection for the stationary 23-second indoor prototype.
 
-Runs in a background thread. Requires ultralytics; first scan downloads
-the small pose model. Camera motion/zoom can invalidate pixel-based heights.
+Track ankle/foot height or the bottom of a detected person bounding box.
+Do not require the blue floor line to overlap the subject. Distances
+are screen-space estimates until physically calibrated.
 """
-from pathlib import Path
 import cv2
 import numpy as np
 from measurement import Jump, metres_from_pixels
 
 
-def find_blue_lip(frame, x):
-    """Find a likely blue line near a detected hip x coordinate.
-
-    This is heuristic; painted snow and broadcast colors can confuse it.
-    """
+def find_blue_lip(frame, x=None):
+    """Optional floor-line reference; never required for person detection."""
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-    mask = cv2.inRange(hsv, np.array([90, 65, 65]), np.array([132, 255, 255]))
-    h, w = mask.shape
-    xx = max(0, min(w - 1, int(x)))
-    half = max(12, round(w * .09))
-    crop = mask[int(h*.65):, max(0, xx-half): min(w, xx+half)]
-    scores = np.count_nonzero(crop, axis=1)
-    if not scores.size:
-        return None
-    # Only accept a moderately continuous blue segment.
-    y = int(np.argmax(scores))
-    if scores[y] < max(3, crop.shape[1] * .08):
-        return None
-    return y + int(h*.65)
+    h, w = hsv.shape[:2]
+    region = hsv[int(h * .60):]
+    mask = cv2.inRange(region, np.array([85, 35, 35]), np.array([135, 255, 255]))
+    scores = np.count_nonzero(mask, axis=1)
+    if scores.size and scores.max() >= max(3, w * .08):
+        return int(np.argmax(scores) + h * .60)
+    return None
+
+
+def find_jump_peaks(observations, fps, sensitivity=.45):
+    """Find sustained upward foot movement from observed image y positions.
+
+    observations: (frame number, lowest visible foot/bbox y) pairs.
+    A peak is a *candidate*, not a validated jump or metre measurement.
+    """
+    if len(observations) < 5:
+        return []
+    frames = np.array([v[0] for v in observations], dtype=np.int32)
+    bottoms = np.array([v[1] for v in observations], dtype=float)
+    baseline = float(np.percentile(bottoms, 85))
+    heights = np.maximum(0, baseline - bottoms)
+    radius = 2
+    smooth = np.convolve(np.pad(heights, (radius, radius), mode="edge"),
+                         np.ones(2*radius+1)/(2*radius+1), mode="valid")
+    min_height = 14 + (1 - float(sensitivity)) * 25
+    min_gap = max(1, int(fps * .65))
+    peaks = []
+    for i in range(2, len(smooth)-2):
+        if smooth[i] < min_height or smooth[i] < max(smooth[i-2:i+3]):
+            continue
+        # Require nearby frames to show a visible up/down motion.
+        span = max(4, int(fps * .6 / max(1, np.median(np.diff(frames)))))
+        lo = max(0, i-span)
+        hi = min(len(smooth), i+span+1)
+        if smooth[i] - min(np.min(smooth[lo:i+1]),np.min(smooth[i:hi])) < min_height*.5:
+            continue
+        if peaks and frames[i] - peaks[-1][0] < min_gap:
+            if smooth[i] > peaks[-1][1]:
+                peaks[-1] = (int(frames[i]), float(smooth[i]))
+        else:
+            peaks.append((int(frames[i]), float(smooth[i])))
+    return peaks
 
 
 def analyze_video(path, scale=0, stride=4, sensitivity=.45, progress=None):
-    """Detect hip keypoints and blue lip in sampled frames.
-
-    Returns *candidate* peak events with a screen-space pixel height. The
-    values are not reliable metres without scene-specific calibration.
-    """
     try:
         from ultralytics import YOLO
     except ImportError as exc:
-        raise RuntimeError("Install the updated requirements (ultralytics).") from exc
+        raise RuntimeError("Install dependencies: pip install -r requirements.txt") from exc
     model = YOLO("yolov8n-pose.pt")
     cap = cv2.VideoCapture(str(path))
     if not cap.isOpened():
-        raise RuntimeError("Unable to open the video")
-    n = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        raise RuntimeError("Cannot open video")
+    count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     fps = cap.get(cv2.CAP_PROP_FPS) or 30
     stride = max(1, int(stride))
     observations = []
-    prev_xy = None
-    last_progress = -1
+    previous = None
     try:
-        for frame_no in range(0, n, stride):
-            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_no)
+        for frame_number in range(0, count, stride):
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
             ok, frame = cap.read()
             if not ok:
                 break
-            # Resize only for inference, then reproject coordinates to image.
             h, w = frame.shape[:2]
-            ratio = min(1., 960. / max(h, w))
-            small = cv2.resize(frame, (max(1,round(w*ratio)), max(1,round(h*ratio))))
-            result = model.predict(small, conf=.30, imgsz=640, verbose=False, device="cpu")[0]
-            candidates = []
-            if result.keypoints is not None and result.keypoints.xy is not None:
-                points = result.keypoints.xy.cpu().numpy()
-                conf = result.keypoints.conf
-                confidences = conf.cpu().numpy() if conf is not None else None
-                for i, kps in enumerate(points):
-                    if len(kps) <= 12:
-                        continue
-                    left, right = kps[11], kps[12]
-                    if confidences is not None and min(confidences[i,11],confidences[i,12]) < .35:
-                        continue
-                    hip = (left + right) / (2 * ratio)
-                    if np.all(np.isfinite(hip)) and hip[0] > 0 and hip[1] > 0:
-                        blue_y = find_blue_lip(frame, hip[0])
-                        if blue_y is None:
-                            continue
-                        px = max(0., float(blue_y - hip[1]))
-                        candidates.append((float(hip[0]),float(hip[1]),px))
-            if candidates:
-                # Prefer continuity, otherwise strongest above-lip separation.
-                selected = (min(candidates,key=lambda p:(p[0]-prev_xy[0])**2+
-                           (p[1]-prev_xy[1])**2) if prev_xy is not None
-                           else max(candidates,key=lambda p:p[2]))
-                prev_xy = selected[:2]
-                observations.append((frame_no,selected[2]))
-            pct = int(100 * frame_no/max(1,n-1))
-            if progress and pct != last_progress and pct % 2 == 0:
-                progress(pct)
-                last_progress = pct
+            result = model.predict(frame, conf=.18, imgsz=640,
+                                   verbose=False, device="cpu")[0]
+            choices = []
+            boxes = result.boxes.xyxy.cpu().numpy() if result.boxes is not None else []
+            points = (result.keypoints.xy.cpu().numpy()
+                      if result.keypoints is not None else [])
+            confidence = (result.keypoints.conf.cpu().numpy()
+                          if result.keypoints is not None and
+                             result.keypoints.conf is not None else None)
+            for i, box in enumerate(boxes):
+                x1,y1,x2,y2 = map(float,box)
+                if x2-x1 < w*.12 or y2-y1 < h*.12:
+                    continue
+                foot_y = y2
+                if i < len(points) and len(points[i]) >= 17:
+                    ankle_y = [float(points[i][k][1]) for k in (15,16)
+                               if confidence is None or confidence[i][k] > .25]
+                    if ankle_y:
+                        foot_y = max(ankle_y)
+                center = ((x1+x2)/2, (y1+y2)/2)
+                choices.append((center,foot_y))
+            if choices:
+                selected = (min(choices,key=lambda v:(v[0][0]-previous[0])**2+
+                                (v[0][1]-previous[1])**2) if previous is not None
+                            else max(choices,key=lambda v:v[1]))
+                previous = selected[0]
+                observations.append((frame_number,selected[1]))
+            if progress and frame_number % max(1,int(fps)) < stride:
+                progress(min(100,int(frame_number*100/max(1,count))))
     finally:
         cap.release()
-    if len(observations) < 3:
-        return []
-    min_px = 12 + (1-float(sensitivity))*40
-    gap = max(1,int(.9*fps))
-    peaks = []
-    for i in range(1,len(observations)-1):
-        frame, val = observations[i]
-        if val < min_px:
-            continue
-        if val < observations[i-1][1] or val < observations[i+1][1]:
-            continue
-        if peaks and frame-peaks[-1][0] < gap:
-            if val > peaks[-1][1]:
-                peaks[-1] = (frame,val)
-        else:
-            peaks.append((frame,val))
-    return [Jump(int(f),metres_from_pixels(px,scale),float(px),"auto candidate")
-            for f,px in peaks]
+    peaks = find_jump_peaks(observations,fps,sensitivity)
+    # Scale describes image-space screen distance, not true athlete's hip
+    # height. Therefore do not supply a misleading number of metres.
+    return [Jump(frame=frame,height_m=None,pixel_height=height,
+                 source="auto candidate") for frame,height in peaks]
