@@ -117,6 +117,9 @@ class VideoCanvas(QWidget):
             return
         if event.button() == Qt.MouseButton.RightButton:
             self._drag_start=event.position()
+            event.accept()
+            return
+        if event.button() != Qt.MouseButton.LeftButton:
             return
         box = self.frame_rect()
         if not box.contains(event.position()):
@@ -142,7 +145,8 @@ class VideoCanvas(QWidget):
         self.update()
 
     def mouseMoveEvent(self,event):
-        if self._drag_start is not None and self.frame is not None:
+        if (self._drag_start is not None and self.frame is not None
+                and event.buttons() & Qt.MouseButton.RightButton):
             dx=event.position().x()-self._drag_start.x()
             dy=event.position().y()-self._drag_start.y()
             area=self.frame_rect()
@@ -152,7 +156,9 @@ class VideoCanvas(QWidget):
             self.update()
 
     def mouseReleaseEvent(self,event):
-        self._drag_start=None
+        if event.button() == Qt.MouseButton.RightButton:
+            self._drag_start=None
+            event.accept()
 
     def reset_zoom(self):
         self.zoom=1.
@@ -478,7 +484,8 @@ class App(QMainWindow):
         outer.addWidget(textlabel("Known ruler distance",13,INK,True))
         self.reference_m=QDoubleSpinBox()
         self.reference_m.setRange(.01,10)
-        self.reference_m.setValue(1.)
+        self.reference_m.setDecimals(2)
+        self.reference_m.setValue(0.50)
         self.reference_m.setSuffix(" m")
         self.reference_m.setMaximumWidth(460)
         self.reference_m.lineEdit().setTextMargins(20,0,8,0)
@@ -567,18 +574,18 @@ class App(QMainWindow):
         self.timer.stop()
         self.mode="ruler"
         self._ruler_first=None
-        self.notice.setText("Scroll to zoom, right-drag to pan, then click two marks at your known distance.")
+        self.notice.setText("Calibrate 50 cm: wheel to zoom, RIGHT-drag to pan, LEFT-click two ruler marks.")
 
     def canvas_clicked(self,x,y):
         if self.mode=="ruler":
             if self._ruler_first is None:
                 self._ruler_first=(x,y)
-                self.notice.setText("Click the second ruler mark. Use Settings for its actual distance.")
+                self.notice.setText("RIGHT-drag to reposition if needed, then LEFT-click the second mark.")
             else:
                 distance=abs(y-self._ruler_first[1])
                 self.mode=""
                 if distance<30:
-                    self.notice.setText("Marks too close. Pick a known 1 metre span.")
+                    self.notice.setText("Marks too close. Zoom in and select two marks 50 cm apart.")
                     return
                 self.scale.setValue(distance/self.reference_m.value())
                 self.notice.setText(f"Calibrated: {distance/self.reference_m.value():.1f} pixels per metre (estimated)")
