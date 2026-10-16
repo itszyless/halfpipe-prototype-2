@@ -149,7 +149,8 @@ def analyze_video(path, scale=0, stride=4, sensitivity=.45, progress=None, force
             ok,frame=cap.read()
             if not ok: break
             h,w=frame.shape[:2]
-            if frame_no==0: baseline=detect_tape_line(frame)
+            if baseline is None and frame_no<=max(stride*12,int(fps*2)):
+                baseline=detect_tape_line(frame)
             result=model.predict(frame,imgsz=640,conf=.16,verbose=False,device="cpu")[0]
             boxes=result.boxes.xyxy.cpu().numpy() if result.boxes is not None else []
             kps=result.keypoints.xy.cpu().numpy() if result.keypoints is not None else []
@@ -180,8 +181,6 @@ def analyze_video(path, scale=0, stride=4, sensitivity=.45, progress=None, force
     floor=baseline
     standing_y=float(np.percentile([v[1] for v in observations],90)) if observations else None
     events=find_jump_peaks(observations,fps,sensitivity,standing_y)
-    if scale>0:
-        events=[(f,px) for f,px in events if px/scale>=.05]
     for record in tracks.values():
         record["baseline_y"]=floor
         record["height_px"]=max(0.,standing_y-record["foot_y"]) if standing_y is not None else None
