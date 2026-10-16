@@ -166,7 +166,11 @@ class JumpTimeline(QWidget):
 
     def mousePressEvent(self,event):
         x=max(0,min(self.width()-32,event.position().x()-16))
-        self.seek.emit(round(x/max(1,self.width()-32)*(self.total-1)))
+        clicked_frame=round(x/max(1,self.width()-32)*(self.total-1))
+        # Prefer an actual jump marker when clicking close to a visible dot.
+        threshold=max(1,round(self.total*10/max(1,self.width()-32)))
+        nearby=[j for j in self.jumps if abs(j.frame-clicked_frame)<=threshold]
+        self.seek.emit(min(nearby,key=lambda j:abs(j.frame-clicked_frame)).frame if nearby else clicked_frame)
 
 
 class Worker(QThread):
