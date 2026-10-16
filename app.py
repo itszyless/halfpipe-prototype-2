@@ -95,7 +95,6 @@ class VideoCanvas(QWidget):
         self.lip_a = self.lip_b = self.hip = None
         self.show_overlay = True
         self.pose = None
-        self.fixed_baseline = None
         self.pixels_per_metre = 0
         self.zoom=1.0
         self.pan_x=.5
@@ -212,9 +211,6 @@ class VideoCanvas(QWidget):
         def map_point(pt):
             return QPointF(box.x()+pt[0]/w*box.width(),box.y()+pt[1]/h*box.height())
         if self.show_overlay:
-            if self.fixed_baseline is not None:
-                p.setPen(QPen(QColor("#48afff"),2))
-                p.drawLine(map_point((0,self.fixed_baseline)),map_point((w,self.fixed_baseline)))
             if self.lip_a and self.lip_b:
                 p.setPen(QPen(QColor("#4cbaff"),3))
                 p.drawLine(map_point(self.lip_a),map_point(self.lip_b))
@@ -696,8 +692,6 @@ class App(QMainWindow):
         self.frame_index=0
         self.jumps=[]
         self.tracks={}
-        self.fixed_baseline=None
-        self.auto_candidates=[]
         self.lip_a=self.lip_b=self.hip=None
         self.pixels_per_metre=0
         self.scale.blockSignals(True)
@@ -734,7 +728,6 @@ class App(QMainWindow):
         self.canvas.lip_b=self.lip_b
         self.canvas.hip=self.hip
         self.canvas.pixels_per_metre=self.pixels_per_metre
-        self.canvas.fixed_baseline=self.fixed_baseline
         if self.tracks:
             nearest=min(self.tracks,key=lambda k:abs(k-self.frame_index))
             self.canvas.pose=self.tracks[nearest] if abs(nearest-self.frame_index)<=max(2,self.duration.value()) else None
@@ -845,15 +838,10 @@ class App(QMainWindow):
         cached=isinstance(proposals,dict) and proposals.get("from_cache",False)
         if isinstance(proposals,dict):
             self.tracks=proposals.get("tracks",{})
-            self.fixed_baseline=proposals.get("baseline")
             proposals=proposals.get("jumps",[])
-        self.auto_candidates=list(proposals)
         manual=[j for j in self.jumps if j.source!="auto candidate"]
         manual_frames={j.frame for j in manual}
-        filtered=[j for j in proposals if j.frame not in manual_frames and (self.pixels_per_metre<=0 or j.pixel_height is None or j.pixel_height/self.pixels_per_metre>=.05)]
-        for j in filtered:
-            j.height_m=metres_from_pixels(j.pixel_height,self.pixels_per_metre)
-        self.jumps=sorted(manual+filtered,key=lambda j:j.frame)
+        self.jumps=sorted(manual+[j for j in proposals if j.frame not in manual_frames],key=lambda j:j.frame)
         self.notice.setText(f"{'Loaded saved analysis' if cached else 'Analysis saved for next time'} · {len(proposals)} jump candidates. Calibrate ruler for metres.")
         self.scan_btn.setEnabled(True)
         self.rescan_btn.setEnabled(True)
@@ -872,12 +860,6 @@ class App(QMainWindow):
         for jump in self.jumps:
             if jump.pixel_height is not None:
                 jump.height_m=metres_from_pixels(jump.pixel_height,value)
-        if hasattr(self,"auto_candidates") and self.auto_candidates:
-            manual=[j for j in self.jumps if j.source!="auto candidate"]
-            accepted=[j for j in self.auto_candidates if value<=0 or j.pixel_height is None or j.pixel_height/value>=.05]
-            for j in accepted:
-                j.height_m=metres_from_pixels(j.pixel_height,value)
-            self.jumps=sorted(manual+accepted,key=lambda j:j.frame)
         self.save_sidecar()
         self.update_display()
 
