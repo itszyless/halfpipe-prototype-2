@@ -4,6 +4,9 @@ Reference height: average grounded foot y from video, NOT arbitrary hip height.
 True metric height requires ruler/camera calibration.
 """
 import cv2
+import json
+import os
+from pathlib import Path
 import numpy as np
 from measurement import Jump
 
@@ -63,7 +66,60 @@ def find_jump_peaks(observations, fps, sensitivity=.45, baseline=None):
     return events
 
 
-def analyze_video(path, scale=0, stride=4, sensitivity=.45, progress=None):
+CACHE_VERSION=1
+
+
+def _cache_file(path):
+    return Path(str(path)+".pose-cache.json")
+
+
+def _cache_key(path,stride,sensitivity):
+    stat=Path(path).stat()
+    return {"version":CACHE_VERSION,"size":stat.st_size,
+            "mtime_ns":stat.st_mtime_ns,"stride":int(stride),
+            "sensitivity":round(float(sensitivity),5),
+            "model":"yolov8n-pose.pt"}
+
+
+def _read_cache(path,key):
+    try:
+        cached=json.loads(_cache_file(path).read_text(encoding="utf-8"))
+        if cached.get("key")!=key:
+            return None
+        payload=cached["data"]
+        return {"jumps":[Jump(**j) for j in payload["jumps"]],
+                "tracks":{int(k):v for k,v in payload["tracks"].items()},
+                "baseline":payload.get("baseline"),
+                "standing_y":payload.get("standing_y"),
+                "from_cache":True}
+    except (OSError,ValueError,KeyError,TypeError):
+        return None
+
+
+def _write_cache(path,key,data):
+    target=_cache_file(path)
+    temp=Path(str(target)+".tmp")
+    payload={"key":key,"data":{"jumps":[j.to_dict() for j in data["jumps"]],
+             "tracks":data["tracks"],"baseline":data["baseline"],
+             "standing_y":data["standing_y"]}}
+    try:
+        temp.write_text(json.dumps(payload,separators=(",",":")),encoding="utf-8")
+        os.replace(temp,target)
+    except OSError:
+        try:
+            temp.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def analyze_video(path, scale=0, stride=4, sensitivity=.45, progress=None, force=False):
+    key=_cache_key(path,stride,sensitivity)
+    if not force:
+        previous=_read_cache(path,key)
+        if previous is not None:
+            if progress: progress(100)
+            return previous
+
     try:
         from ultralytics import YOLO
     except ImportError as exc:
@@ -122,4 +178,6 @@ def analyze_video(path, scale=0, stride=4, sensitivity=.45, progress=None):
         record["standing_y"]=standing_y
     # Do not invent metres from a camera scale that hasn't been calibrated.
     jumps=[Jump(frame=f,height_m=None,pixel_height=px,source="auto candidate") for f,px in events]
-    return {"jumps":jumps,"tracks":tracks,"baseline":floor,"standing_y":standing_y}
+    data={"jumps":jumps,"tracks":tracks,"baseline":floor,"standing_y":standing_y,"from_cache":False}
+    _write_cache(path,key,data)
+    return data
