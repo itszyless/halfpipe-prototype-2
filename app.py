@@ -567,13 +567,13 @@ class App(QMainWindow):
         self.timer.stop()
         self.mode="ruler"
         self._ruler_first=None
-        self.notice.setText("Click two ruler marks exactly 1 metre apart.")
+        self.notice.setText("Scroll to zoom, right-drag to pan, then click two marks at your known distance.")
 
     def canvas_clicked(self,x,y):
         if self.mode=="ruler":
             if self._ruler_first is None:
                 self._ruler_first=(x,y)
-                self.notice.setText("Click the mark exactly 1 metre from the first.")
+                self.notice.setText("Click the second ruler mark. Use Settings for its actual distance.")
             else:
                 distance=abs(y-self._ruler_first[1])
                 self.mode=""
