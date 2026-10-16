@@ -599,8 +599,11 @@ class App(QMainWindow):
         self.update_display()
 
     def load_default_video(self):
-        # The local 23-second demonstration clip is the default.
+        # Prefer the current MOV over the old MP4, regardless of old sidecars.
         candidates = [
+            ROOT / "video" / "prototype.mov",
+            ROOT / "videos" / "prototype.mov",
+            ROOT / "prototype.mov",
             ROOT / "video" / "prototypev1.mp4",
             ROOT / "videos" / "prototypev1.mp4",
             ROOT / "prototypev1.mp4",
@@ -608,9 +611,9 @@ class App(QMainWindow):
         for candidate in candidates:
             if candidate.is_file():
                 self.load_video(str(candidate))
-                self.notice.setText("Prototype video loaded. Automatic analysis is starting.")
+                self.notice.setText("Local video loaded. Detection is starting.")
                 return
-        self.notice.setText("Place prototypev1.mp4 inside the video folder, then restart, or use Change video.")
+        self.notice.setText("Place prototype.mov in the video folder, or choose Change video.")
         self.open_btn.setEnabled(True)
 
     def default_video_ready(self, path):
