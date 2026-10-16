@@ -1,3 +1,11 @@
+## Indoor prototype video (October 2026)
+
+The default footage is now the local **`prototypev1.mp4`**. Place it in `video/prototypev1.mp4` (or `videos/prototypev1.mp4`) within this repository. The app no longer starts a Calgary download. You can also click **Change video** to locate your file anywhere on the computer.
+
+The 23-second portrait test has a floor-level blue reference line and a vertical ruler near the right edge. The existing pose-based hip detector and jump-candidate workflow are retained, and the line detector now searches the bottom portion of the image. **This is experimental and not verified against the real video results.** The ruler is not automatically interpreted: measurements in metres still need reliable scale calibration. Because perspective matters, a ruler at a different depth from the person can distort measurements.
+
+Do not commit the video to this public repository unless you have permission to share the footage. `video/` and `*.mp4` are gitignored.
+
 > **Update:** The latest code loads the Calgary video automatically (downloads it to the ignored `video/` folder on first launch) and includes pose-based automatic candidate detection with YOLO. It uses a background worker so the UI remains responsive. The first AI analysis downloads `yolov8n-pose.pt`; internet access is required. Run `pip install -r requirements.txt` again after pulling. A video can be loaded manually if the hosted link is inaccessible. Orange markers are AI-generated **unverified candidates**, not guaranteed jumps; a physically calibrated camera is still required for metre estimates. Inter is used when installed on the computer, otherwise Segoe UI. Basic UI fade transitions have been added. Large or long videos may analyze slowly on CPU.
 
 # Prototype V1.2 — Halfpipe Jump Measurement
