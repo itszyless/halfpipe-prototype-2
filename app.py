@@ -7,6 +7,7 @@ Camera changes/zoom require re-calibration. Automatic detection is experimental.
 import json
 import math
 import os
+import urllib.request
 from pathlib import Path
 
 import cv2
@@ -23,6 +24,8 @@ from measurement import Jump, metres_from_pixels, pixel_height_above_lip, track_
 
 ROOT = Path(__file__).resolve().parent
 SAVE_SUFFIX = ".prototype-v1.2.json"
+VIDEO_URL = "https://s3.eu-central-1.wasabisys.com/judges/2025_26/freeski/Calgary%20(HP)/FK%20Finals%20-%201%20-%20Camera3%20-%20[10-30-18]%20[12-03-12].mp4"
+VIDEO_FILE = ROOT / "video" / "Calgary-Finals-Camera3.mp4"
 WHITE = "#ffffff"
 INK = "#151b2b"
 MUTED = "#87909e"
@@ -174,14 +177,45 @@ class JumpTimeline(QWidget):
 
 
 class Worker(QThread):
-    finished_jumps=Signal(object)
-    failed=Signal(str)
-    def __init__(self,path,first,point,seconds,sensitivity):
+    finished_jumps = Signal(object)
+    failed = Signal(str)
+    progress = Signal(int)
+
+    def __init__(self, path, scale, stride, sensitivity):
         super().__init__()
-        self.args=(path,first,point,seconds,sensitivity)
+        self.args = (path, scale, stride, sensitivity)
+
     def run(self):
         try:
-            self.finished_jumps.emit(track_candidates(*self.args))
+            from automatic import analyze_video
+            self.finished_jumps.emit(analyze_video(*self.args, progress=self.progress.emit))
+        except Exception as exc:
+            self.failed.emit(str(exc))
+
+
+class DefaultVideoDownload(QThread):
+    progress = Signal(int)
+    complete = Signal(str)
+    failed = Signal(str)
+
+    def run(self):
+        try:
+            VIDEO_FILE.parent.mkdir(parents=True, exist_ok=True)
+            temp = VIDEO_FILE.with_suffix(".part")
+            request = urllib.request.Request(VIDEO_URL, headers={"User-Agent": "PrototypeV1.2"})
+            with urllib.request.urlopen(request, timeout=45) as response, open(temp, "wb") as dest:
+                total = int(response.headers.get("Content-Length") or 0)
+                written = 0
+                while True:
+                    chunk = response.read(1024*1024)
+                    if not chunk:
+                        break
+                    dest.write(chunk)
+                    written += len(chunk)
+                    if total:
+                        self.progress.emit(min(99, int(written*100/total)))
+            temp.replace(VIDEO_FILE)
+            self.complete.emit(str(VIDEO_FILE))
         except Exception as exc:
             self.failed.emit(str(exc))
 
@@ -205,6 +239,7 @@ class App(QMainWindow):
         self.timer.timeout.connect(self.next_frame)
         self.build_ui()
         self.update_display()
+        QTimer.singleShot(200, self.load_default_video)
 
     def build_ui(self):
         root=QWidget()
@@ -282,8 +317,8 @@ class App(QMainWindow):
         self.hip_btn=make_button("Select hip","pin")
         self.add_btn=make_button("Save jump","save",True)
         self.remove_btn=make_button("Remove jump","delete")
-        self.scan_btn=make_button("Find candidates")
-        for btn in [self.lip_btn,self.hip_btn,self.add_btn,self.remove_btn,self.scan_btn]:
+        self.scan_btn=make_button("Auto-detect jumps",primary=True)
+        for btn in [self.scan_btn,self.remove_btn]:
             actions.addWidget(btn)
         actions.addStretch()
         main.addLayout(actions)
@@ -302,7 +337,7 @@ class App(QMainWindow):
         scroller.setFrameShape(QFrame.Shape.NoFrame)
         page=QWidget()
         outer=QVBoxLayout(page)
-        outer.setContentsMargins(34,32,34,30)
+        outer.setContentsMargins(40,32,40,32)
         outer.setSpacing(18)
         outer.addWidget(textlabel("Settings",26,INK,True))
         outer.addWidget(textlabel("Measurement & detection preferences",12,MUTED))
@@ -317,22 +352,25 @@ class App(QMainWindow):
         self.scale.setSuffix(" px / m")
         self.scale.setValue(0)
         self.scale.valueChanged.connect(self.scale_changed)
+        self.scale.setMaximumWidth(400)
         outer.addWidget(self.scale)
         outer.addWidget(textlabel("Use a known-length object/segment in the same depth plane as the athlete. Recalibrate after zoom.",11,MUTED))
         outer.addSpacing(14)
         outer.addWidget(textlabel("DETECTION",11,MUTED,True))
-        outer.addWidget(textlabel("Tracking duration",13,INK,True))
+        outer.addWidget(textlabel("Analyze every Nth frame",13,INK,True))
         self.duration=QSpinBox()
-        self.duration.setRange(5,3600)
-        self.duration.setValue(70)
-        self.duration.setSuffix(" sec")
+        self.duration.setRange(1,30)
+        self.duration.setValue(4)
+        self.duration.setSuffix(" frames")
+        self.duration.setMaximumWidth(400)
         outer.addWidget(self.duration)
         outer.addWidget(textlabel("Candidate sensitivity",13,INK,True))
         self.sensitivity=QSlider(Qt.Orientation.Horizontal)
         self.sensitivity.setRange(1,100)
         self.sensitivity.setValue(45)
+        self.sensitivity.setMaximumWidth(400)
         outer.addWidget(self.sensitivity)
-        outer.addWidget(textlabel("Optical flow only suggests peaks in upward screen motion. Review each candidate manually.",11,MUTED))
+        outer.addWidget(textlabel("Pose detection finds the hip without clicking. Blue-lip and jump results are estimates.",11,MUTED))
         outer.addSpacing(14)
         outer.addWidget(textlabel("VIEW",11,MUTED,True))
         self.overlay=QCheckBox("Show lip / hip markers")
@@ -382,6 +420,29 @@ class App(QMainWindow):
             self.mode=""
             self.notice.setText("Hip selected. Save jump to add a marker.")
         self.update_display()
+
+    def load_default_video(self):
+        if VIDEO_FILE.exists() and VIDEO_FILE.stat().st_size > 1024 * 1024:
+            self.load_video(str(VIDEO_FILE))
+            self.notice.setText("Calgary video loaded. Click Auto-detect jumps.")
+            return
+        self.notice.setText("Downloading the Calgary video…")
+        self.open_btn.setEnabled(False)
+        self.downloader = DefaultVideoDownload()
+        self.downloader.progress.connect(
+            lambda p: self.notice.setText(f"Downloading Calgary video… {p}%"))
+        self.downloader.complete.connect(self.default_video_ready)
+        self.downloader.failed.connect(self.default_video_failed)
+        self.downloader.start()
+
+    def default_video_ready(self, path):
+        self.open_btn.setEnabled(True)
+        self.load_video(path)
+        self.notice.setText("Calgary video ready. Click Auto-detect jumps.")
+
+    def default_video_failed(self, error):
+        self.open_btn.setEnabled(True)
+        self.notice.setText("Download unavailable; use Open video to choose a local MP4. " + error[:75])
 
     def open_video(self):
         filename,_=QFileDialog.getOpenFileName(self,"Open halfpipe footage","","Video files (*.mp4 *.mov *.avi *.mkv);;All files (*)")
@@ -493,14 +554,13 @@ class App(QMainWindow):
 
     def scan(self):
         if not self.cap:
-            return
-        if self.hip is None:
-            self.notice.setText("Select a hip point on the CURRENT frame before scanning.")
+            self.notice.setText("Wait for the video or open your local MP4 first.")
             return
         self.timer.stop()
         self.scan_btn.setEnabled(False)
-        self.notice.setText("Scanning from this frame. Please wait...")
-        self.worker=Worker(self.path,self.frame_index,self.hip,self.duration.value(),self.sensitivity.value()/100)
+        self.notice.setText("Preparing pose AI. First run may download the model…")
+        self.worker=Worker(self.path,self.pixels_per_metre,self.duration.value(),self.sensitivity.value()/100)
+        self.worker.progress.connect(lambda p: self.notice.setText(f"Analyzing video… {p}%"))
         self.worker.finished_jumps.connect(self.scan_done)
         self.worker.failed.connect(self.scan_failed)
         self.worker.start()
@@ -509,7 +569,7 @@ class App(QMainWindow):
         existing={j.frame for j in self.jumps}
         self.jumps.extend(j for j in proposals if j.frame not in existing)
         self.jumps.sort(key=lambda x:x.frame)
-        self.notice.setText(f"Found {len(proposals)} candidate peaks. Orange markers are not verified jumps or heights.")
+        self.notice.setText(f"Found {len(proposals)} automatic candidates. Review orange markers; metres need calibration.")
         self.scan_btn.setEnabled(True)
         self.update_display()
         self.save_sidecar()
@@ -517,7 +577,7 @@ class App(QMainWindow):
     def scan_failed(self,error):
         self.scan_btn.setEnabled(True)
         QMessageBox.warning(self,"Tracking failed",error)
-        self.notice.setText("Tracking failed; mark jumps manually instead.")
+        self.notice.setText("Automatic analysis failed. Check the model installation or video.")
 
     def scale_changed(self,value):
         self.pixels_per_metre=value
@@ -581,13 +641,13 @@ def main():
         QWidget { background:#ffffff; color:#151b2b; font-family:Inter,'Segoe UI',sans-serif; font-size:12px; }
         QFrame#side { background:#fbfcff; border-right:1px solid #e8ecf2; }
         QFrame#side QLabel { background:transparent; }
-        QPushButton { background:#f6f8fb; border:1px solid #e6ebf1; border-radius:10px; padding:7px 12px; text-align:center; }
+        QPushButton { background:#f6f8fb; border:1px solid #e6ebf1; border-radius:11px; padding:9px 14px; text-align:center; }
         QPushButton:hover { background:#eaf0ff; }
         QPushButton:disabled { color:#afb7c7; }
         QPushButton[primary="true"] { background:#3969ec; border-color:#3969ec; color:white; font-weight:600; }
         QPushButton[primary="true"]:hover { background:#2859d8; }
         QPushButton[selected="true"] { background:#eaf0ff; color:#2254cf; font-weight:600; }
-        QDoubleSpinBox,QSpinBox { border:1px solid #e2e8f0; border-radius:8px; min-height:34px; padding:2px 10px; }
+        QDoubleSpinBox,QSpinBox { border:1px solid #e2e8f0; border-radius:10px; min-height:39px; padding-left:17px; padding-right:12px; }
         QScrollArea { border:0; }
         QSlider::groove:horizontal { height:5px; background:#e3e9f2; border-radius:2px; }
         QSlider::handle:horizontal { width:17px; margin:-6px 0; background:#3969ec; border-radius:8px; }
