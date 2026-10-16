@@ -587,7 +587,7 @@ class App(QMainWindow):
         current=next((j for j in self.jumps if j.frame==self.frame_index),None)
         if current is None and self.canvas.pose:
             px=self.canvas.pose.get("height_px",0)
-            self.measure.setText(f"{px:.0f} px · uncalibrated")
+            self.measure.setText(f"{px / self.pixels_per_metre:.2f} m · estimated" if self.pixels_per_metre > 0 else f"{px:.0f} px · uncalibrated")
             return
         if current:
             if current.height_m is not None:
