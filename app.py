@@ -1,14 +1,12 @@
-"""Prototype V1.2 — clean halfpipe jump review desktop application.
+"""Desktop video review and experimental jump measurements.
 
-Run: python app.py
-Measurements: hip centre above the blue lip reference line.
-Camera changes/zoom require re-calibration. Automatic detection is experimental.
+The app reads local footage, displays YOLO pose tracking, and supports
+ruler calibration. Results must be checked before use.
 """
 import json
 import base64
 import math
 import os
-import urllib.request
 from pathlib import Path
 
 import cv2
@@ -18,15 +16,13 @@ from PySide6.QtGui import QFont, QFontDatabase, QIcon, QImage, QPainter, QPen, Q
 from PySide6.QtWidgets import (
     QApplication, QWidget, QMainWindow, QFileDialog, QHBoxLayout, QVBoxLayout,
     QLabel, QPushButton, QSlider, QStackedWidget, QFrame, QScrollArea,
-    QDoubleSpinBox, QSpinBox, QCheckBox, QMessageBox, QProgressBar,
+    QDoubleSpinBox, QSpinBox, QCheckBox, QMessageBox,
     QSizePolicy, QGraphicsOpacityEffect
 )
-from measurement import Jump, metres_from_pixels, pixel_height_above_lip, track_candidates
+from measurement import Jump, metres_from_pixels, pixel_height_above_lip
 
 ROOT = Path(__file__).resolve().parent
 SAVE_SUFFIX = ".prototype-v1.2.json"
-VIDEO_URL = "https://s3.eu-central-1.wasabisys.com/judges/2025_26/freeski/Calgary%20(HP)/FK%20Finals%20-%201%20-%20Camera3%20-%20[10-30-18]%20[12-03-12].mp4"
-VIDEO_FILE = ROOT / "video" / "prototypev1.mp4"
 WHITE = "#0c0e12"
 INK = "#f3f5f8"
 MUTED = "#9aa2b1"
@@ -313,33 +309,6 @@ class Worker(QThread):
         try:
             from automatic import analyze_video
             self.finished_jumps.emit(analyze_video(*self.args, progress=self.progress.emit,force=self.force))
-        except Exception as exc:
-            self.failed.emit(str(exc))
-
-
-class DefaultVideoDownload(QThread):
-    progress = Signal(int)
-    complete = Signal(str)
-    failed = Signal(str)
-
-    def run(self):
-        try:
-            VIDEO_FILE.parent.mkdir(parents=True, exist_ok=True)
-            temp = VIDEO_FILE.with_suffix(".part")
-            request = urllib.request.Request(VIDEO_URL, headers={"User-Agent": "PrototypeV1.2"})
-            with urllib.request.urlopen(request, timeout=45) as response, open(temp, "wb") as dest:
-                total = int(response.headers.get("Content-Length") or 0)
-                written = 0
-                while True:
-                    chunk = response.read(1024*1024)
-                    if not chunk:
-                        break
-                    dest.write(chunk)
-                    written += len(chunk)
-                    if total:
-                        self.progress.emit(min(99, int(written*100/total)))
-            temp.replace(VIDEO_FILE)
-            self.complete.emit(str(VIDEO_FILE))
         except Exception as exc:
             self.failed.emit(str(exc))
 
