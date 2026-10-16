@@ -14,20 +14,25 @@ SKELETON = [(5,6),(5,7),(7,9),(6,8),(8,10),(5,11),(6,12),
 
 
 def detect_tape_line(frame):
-    """Find the real blue floor tape once, using first frame only."""
+    """Locate pale blue/white tape low in the frame; not the wall edge.
+
+    A short tape near the bottom is less saturated than conventional blue
+    paint, so select the horizontally widespread pale band on red carpet.
+    """
     hsv=cv2.cvtColor(frame,cv2.COLOR_BGR2HSV)
     h,w=hsv.shape[:2]
-    start=int(h*.70)
-    mask=cv2.inRange(hsv[start:],np.array([87,40,35]),np.array([132,255,255]))
-    mask[:,int(w*.88):]=0
-    scores=np.count_nonzero(mask,axis=1)
-    if not len(scores): return None
-    for y in np.argsort(scores)[::-1][:15]:
-        if scores[y]<max(10,int(w*.1)): continue
-        xs=np.where(mask[max(0,y-2):y+3]>0)[1]
-        if len(xs) and np.ptp(xs)>w*.4: return float(start+y)
+    start=int(h*.86)
+    roi=hsv[start:int(h*.97),:int(w*.83)]
+    pale=(roi[:,:,1]<115)&(roi[:,:,2]>100)
+    counts=np.count_nonzero(pale,axis=1)
+    if not len(counts): return None
+    # Require a continuous horizontal band across a substantial width.
+    for i in np.argsort(counts)[::-1]:
+        if counts[i]<max(24,int(w*.16)): continue
+        xs=np.flatnonzero(pale[i])
+        if len(xs)>1 and np.ptp(xs)>w*.50:
+            return float(start+i)
     return None
-
 
 def find_jump_peaks(observations, fps, sensitivity=.45, baseline=None):
     """Select highest measured feet position in each airborne interval."""
@@ -107,11 +112,13 @@ def analyze_video(path, scale=0, stride=4, sensitivity=.45, progress=None):
                 progress(min(100,int(frame_no*100/max(1,count))))
     finally:
         cap.release()
-    events=find_jump_peaks(observations,fps,sensitivity,baseline)
     floor=baseline
+    standing_y=float(np.percentile([v[1] for v in observations],90)) if observations else None
+    events=find_jump_peaks(observations,fps,sensitivity,standing_y)
     for record in tracks.values():
         record["baseline_y"]=floor
-        record["height_px"]=max(0.,floor-record["foot_y"]) if floor is not None else None
+        record["height_px"]=max(0.,standing_y-record["foot_y"]) if standing_y is not None else None
+        record["standing_y"]=standing_y
     # Do not invent metres from a camera scale that hasn't been calibrated.
     jumps=[Jump(frame=f,height_m=None,pixel_height=px,source="auto candidate") for f,px in events]
-    return {"jumps":jumps,"tracks":tracks,"baseline":floor}
+    return {"jumps":jumps,"tracks":tracks,"baseline":floor,"standing_y":standing_y}
