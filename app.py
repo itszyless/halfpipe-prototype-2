@@ -702,7 +702,11 @@ class App(QMainWindow):
         self.timeline.total=self.frames
         self.seek(0)
         self.setWindowTitle(f"Prototype V1.3 — {Path(filename).name}")
-        QTimer.singleShot(800, lambda: self.scan())  # load cache automatically, or analyze once
+        from automatic import has_cached_analysis
+        if has_cached_analysis(self.path,self.duration.value(),self.sensitivity.value()/100):
+            QTimer.singleShot(200, lambda: self.scan())
+        else:
+            self.notice.setText("Video ready. Press Run detection once; results will be saved.")
 
     def seek(self,n):
         if not self.cap:
