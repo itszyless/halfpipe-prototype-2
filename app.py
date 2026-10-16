@@ -5,6 +5,7 @@ Measurements: hip centre above the blue lip reference line.
 Camera changes/zoom require re-calibration. Automatic detection is experimental.
 """
 import json
+import base64
 import math
 import os
 import urllib.request
@@ -59,10 +60,19 @@ def svg_icon(name, color=INK, size=20):
     p.end()
     return QIcon(image)
 
+def image_icon(asset_name):
+    # These raster assets come from the uploaded artwork, not generated SVGs.
+    path = ROOT / "assets" / (asset_name + ".png.b64")
+    pixmap = QPixmap()
+    if path.exists():
+        pixmap.loadFromData(base64.b64decode(path.read_text(encoding="ascii").strip()), "PNG")
+    return QIcon(pixmap)
+
+
 def make_button(text, icon=None, primary=False):
     b = QPushButton(text)
     if icon:
-        b.setIcon(svg_icon(icon, "#ffffff" if primary else INK))
+        b.setIcon(image_icon("settings-icon") if icon == "settings" else svg_icon(icon, "#ffffff" if primary else INK))
     b.setCursor(Qt.CursorShape.PointingHandCursor)
     b.setProperty("primary", primary)
     b.setMinimumHeight(34)
@@ -731,9 +741,7 @@ QSlider::handle:horizontal { width:17px; margin:-6px 0; background:#dce3f1; bord
 QCheckBox { spacing:12px; }
     """)
     win=App()
-    icon=ROOT/"assets"/"app-icon.svg"
-    if icon.exists():
-        win.setWindowIcon(QIcon(str(icon)))
+    win.setWindowIcon(image_icon("app-icon"))
     win.show()
     if os.name == "nt":
         try:
