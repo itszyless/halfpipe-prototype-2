@@ -434,11 +434,18 @@ class App(QMainWindow):
         self.update_display()
 
     def load_default_video(self):
-        if VIDEO_FILE.exists() and VIDEO_FILE.stat().st_size > 1024 * 1024:
-            self.load_video(str(VIDEO_FILE))
-            self.notice.setText("Calgary video loaded. Click Auto-detect jumps.")
-            return
-        self.notice.setText("Downloading the Calgary video…")
+        # Prefer user-provided local footage; only download when no file exists.
+        candidates = [VIDEO_FILE]
+        for folder in (ROOT / "video", ROOT):
+            if folder.exists():
+                for pattern in ("*.mp4", "*.mov", "*.mkv", "*.avi"):
+                    candidates.extend(sorted(folder.glob(pattern)))
+        for candidate in candidates:
+            if candidate.is_file() and candidate.stat().st_size > 1024 * 1024:
+                self.load_video(str(candidate))
+                self.notice.setText("Local video loaded. Automatic analysis started.")
+                return
+        self.notice.setText("Downloading Calgary video (first launch only)…")
         self.open_btn.setEnabled(False)
         self.downloader = DefaultVideoDownload()
         self.downloader.progress.connect(
