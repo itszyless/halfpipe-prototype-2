@@ -155,10 +155,10 @@ class VideoCanvas(QWidget):
                 conf=self.pose["conf"]
                 p.setPen(QPen(QColor("#9af5c8"), 2))
                 for a,b in SKELETON:
-                    if conf[a]>.25 and conf[b]>.25:
+                    if conf[a]>(.55 if a in (15,16) else .30) and conf[b]>(.55 if b in (15,16) else .30):
                         p.drawLine(map_point(pts[a]),map_point(pts[b]))
                 for i,pt in enumerate(pts):
-                    if conf[i]>.25:
+                    if conf[i]>(.55 if i in (15,16) else .30):
                         p.setBrush(QColor("#9af5c8"))
                         p.drawEllipse(map_point(pt),3,3)
                 baseline=self.pose.get("baseline_y")
