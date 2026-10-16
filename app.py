@@ -95,6 +95,7 @@ class VideoCanvas(QWidget):
         self.lip_a = self.lip_b = self.hip = None
         self.show_overlay = True
         self.pose = None
+        self.pixels_per_metre = 0
         self.setMinimumSize(360, 180)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setCursor(Qt.CursorShape.CrossCursor)
@@ -374,11 +375,14 @@ class App(QMainWindow):
 
         tools = QHBoxLayout()
         tools.setSpacing(8)
+        self.calibrate_btn = make_button("Calibrate ruler")
+        self.calibrate_btn.clicked.connect(self.begin_ruler_calibration)
         self.scan_btn = make_button("Run detection", primary=True)
         self.remove_btn = make_button("Remove point")
         self.scan_btn.clicked.connect(self.scan)
         self.remove_btn.clicked.connect(self.remove_jump)
         tools.addWidget(self.scan_btn)
+        tools.addWidget(self.calibrate_btn)
         tools.addWidget(self.remove_btn)
         tools.addStretch()
         tools.addWidget(textlabel("●  Detected jump", 10, MUTED))
@@ -488,7 +492,29 @@ class App(QMainWindow):
             self.notice.setText("Click the athlete's HIP centre on this frame.")
         self.update_display()
 
+    def begin_ruler_calibration(self):
+        if not self.cap:
+            return
+        self.timer.stop()
+        self.mode="ruler"
+        self._ruler_first=None
+        self.notice.setText("Click two ruler marks exactly 1 metre apart.")
+
     def canvas_clicked(self,x,y):
+        if self.mode=="ruler":
+            if self._ruler_first is None:
+                self._ruler_first=(x,y)
+                self.notice.setText("Click the mark exactly 1 metre from the first.")
+            else:
+                distance=abs(y-self._ruler_first[1])
+                self.mode=""
+                if distance<30:
+                    self.notice.setText("Marks too close. Pick a known 1 metre span.")
+                    return
+                self.scale.setValue(distance)
+                self.notice.setText(f"Scale calibrated: {distance:.1f} px/m; approximate.")
+                self.update_display()
+            return
         if self.mode=="lip":
             if self.lip_a is None:
                 self.lip_a=[x,y]
@@ -574,6 +600,7 @@ class App(QMainWindow):
         self.canvas.lip_a=self.lip_a
         self.canvas.lip_b=self.lip_b
         self.canvas.hip=self.hip
+        self.canvas.pixels_per_metre=self.pixels_per_metre
         if self.tracks:
             nearest=min(self.tracks,key=lambda k:abs(k-self.frame_index))
             self.canvas.pose=self.tracks[nearest] if abs(nearest-self.frame_index)<=max(2,self.duration.value()) else None
@@ -698,6 +725,7 @@ class App(QMainWindow):
 
     def scale_changed(self,value):
         self.pixels_per_metre=value
+        self.canvas.pixels_per_metre=value
         for jump in self.jumps:
             if jump.pixel_height is not None:
                 jump.height_m=metres_from_pixels(jump.pixel_height,value)
