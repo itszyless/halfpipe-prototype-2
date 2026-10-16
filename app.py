@@ -586,7 +586,10 @@ class App(QMainWindow):
         self.counter.setText(f"Frame {self.frame_index+1:,} / {self.frames:,}     {self.frame_index/self.fps:,.2f}s")
         current=next((j for j in self.jumps if j.frame==self.frame_index),None)
         if current is None and self.canvas.pose:
-            px=self.canvas.pose.get("height_px",0)
+            px=self.canvas.pose.get("height_px")
+            if px is None:
+                self.measure.setText("Tape reference not found")
+                return
             self.measure.setText(f"{px / self.pixels_per_metre:.2f} m · estimated" if self.pixels_per_metre > 0 else f"{px:.0f} px · uncalibrated")
             return
         if current:
@@ -683,7 +686,7 @@ class App(QMainWindow):
         existing={j.frame for j in self.jumps}
         self.jumps.extend(j for j in proposals if j.frame not in existing)
         self.jumps.sort(key=lambda x:x.frame)
-        self.notice.setText(f"Found {len(proposals)} jump candidates. Review each peak; metres require calibration.")
+        self.notice.setText(f"Found {len(proposals)} jump candidates. Fixed blue tape reference; metres need ruler calibration.")
         self.scan_btn.setEnabled(True)
         self.update_display()
         self.save_sidecar()
