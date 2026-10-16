@@ -163,12 +163,27 @@ class VideoCanvas(QWidget):
                         p.drawEllipse(map_point(pt),3,3)
                 baseline=self.pose.get("baseline_y")
                 foot=self.pose.get("foot_y")
-                if baseline is not None and foot is not None:
+                standing=self.pose.get("standing_y")
+                x=self.pose.get("foot_x",w/2)
+                ruler_x=w*.91
+                if baseline is not None:
                     p.setPen(QPen(QColor("#48afff"),2))
                     p.drawLine(map_point((0,baseline)),map_point((w,baseline)))
-                    x=next((pts[k][0] for k in (16,15) if conf[k]>.25),w/2)
+                if foot is not None and standing is not None:
                     p.setPen(QPen(QColor("#ffc788"),2,Qt.PenStyle.DashLine))
-                    p.drawLine(map_point((x,foot)),map_point((x,baseline)))
+                    p.drawLine(map_point((x,foot)),map_point((x,standing)))
+                    p.setPen(QPen(QColor("#f7d097"),1,Qt.PenStyle.DashLine))
+                    p.drawLine(map_point((x,foot)),map_point((ruler_x,foot)))
+                    p.setBrush(QColor("#ffd19a"))
+                    p.drawEllipse(map_point((x,foot)),5,5)
+                    height=max(0.,standing-foot)
+                    if self.pixels_per_metre>0:
+                        label=f"{height/self.pixels_per_metre:.2f} m approx."
+                    else:
+                        label=f"{height:.0f} px | calibrate ruler"
+                    p.setPen(QColor("#f1f5fd"))
+                    pos=map_point((ruler_x,foot))
+                    p.drawText(QPointF(max(4.,pos.x()-165),max(16.,pos.y()-12)),label)
         p.end()
 
 
