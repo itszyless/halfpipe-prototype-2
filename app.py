@@ -647,21 +647,20 @@ class App(QMainWindow):
         self.update_display()
 
     def load_default_video(self):
-        # Prefer the current MOV over the old MP4, regardless of old sidecars.
+        # Use the lightweight prototype video whenever it is available.
         candidates = [
-            ROOT / "video" / "prototype.mov",
-            ROOT / "videos" / "prototype.mov",
-            ROOT / "prototype.mov",
             ROOT / "video" / "prototypev1.mp4",
             ROOT / "videos" / "prototypev1.mp4",
             ROOT / "prototypev1.mp4",
+            ROOT / "video" / "prototype.mov",
+            ROOT / "videos" / "prototype.mov",
+            ROOT / "prototype.mov",
         ]
         for candidate in candidates:
             if candidate.is_file():
                 self.load_video(str(candidate))
-                self.notice.setText("Local video loaded. Detection is starting.")
                 return
-        self.notice.setText("Place prototype.mov in the video folder, or choose Change video.")
+        self.notice.setText("Put prototypev1.mp4 in the video folder or click Change video.")
         self.open_btn.setEnabled(True)
 
     def default_video_ready(self, path):
@@ -702,11 +701,13 @@ class App(QMainWindow):
         self.timeline.total=self.frames
         self.seek(0)
         self.setWindowTitle(f"Prototype V1.3 — {Path(filename).name}")
-        from automatic import has_cached_analysis
-        if has_cached_analysis(self.path,self.duration.value(),self.sensitivity.value()/100):
-            QTimer.singleShot(200, lambda: self.scan())
+        # Restore tracking automatically for the lightweight prototype.
+        # The 4K MOV stays manual so decoding/YOLO cannot freeze playback.
+        if Path(filename).name.lower()=="prototypev1.mp4":
+            self.notice.setText("MP4 ready. Loading or building YOLO skeleton tracking...")
+            QTimer.singleShot(450, lambda: self.scan() if self.path==filename else None)
         else:
-            self.notice.setText("Video ready. Press Run detection once; results will be saved.")
+            self.notice.setText("4K video ready. Click Run detection to restore skeleton and measuring lines.")
 
     def seek(self,n):
         if not self.cap:
