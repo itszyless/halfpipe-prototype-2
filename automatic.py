@@ -48,7 +48,7 @@ def find_jump_peaks(observations, fps, sensitivity=.45, baseline=None):
     raw_height = np.maximum(0, floor-feet)
     kernel = np.ones(5)/5
     smooth = np.convolve(np.pad(raw_height,(2,2),mode="edge"),kernel,mode="valid")
-    cutoff = 12 + (1-float(sensitivity))*23
+    cutoff = 24 + (1-float(sensitivity))*26
     airborne = smooth > cutoff
     events=[]
     start=None
@@ -58,15 +58,16 @@ def find_jump_peaks(observations, fps, sensitivity=.45, baseline=None):
             start=i
         elif not active and start is not None:
             end=i
-            if end-start>=2:
+            # Ignore one-frame jitter and short shuffling steps.
+            if end-start>=3 and frames[end-1]-frames[start]>=max(3,int(fps*.18)):
                 apex=start+int(np.argmax(smooth[start:end]))
-                if smooth[apex]>=cutoff and (not events or frames[apex]-events[-1][0] >= fps*.45):
+                if smooth[apex]>=cutoff and (not events or frames[apex]-events[-1][0] >= fps*.55):
                     events.append((int(frames[apex]),float(raw_height[apex])))
             start=None
     return events
 
 
-CACHE_VERSION=1
+CACHE_VERSION=2
 
 
 def _cache_file(path):
@@ -179,6 +180,8 @@ def analyze_video(path, scale=0, stride=4, sensitivity=.45, progress=None, force
     floor=baseline
     standing_y=float(np.percentile([v[1] for v in observations],90)) if observations else None
     events=find_jump_peaks(observations,fps,sensitivity,standing_y)
+    if scale>0:
+        events=[(f,px) for f,px in events if px/scale>=.05]
     for record in tracks.values():
         record["baseline_y"]=floor
         record["height_px"]=max(0.,standing_y-record["foot_y"]) if standing_y is not None else None
