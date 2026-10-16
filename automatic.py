@@ -97,8 +97,8 @@ def analyze_video(path, scale=0, stride=4, sensitivity=.45, progress=None):
                 if x2-x1 < w*.10 or y2-y1 < h*.10: continue
                 pts=np.asarray(kps[i],dtype=float) if i<len(kps) else np.zeros((17,2))
                 scores=conf[i] if conf is not None and i<len(conf) else np.zeros(17)
-                visible=[j for j in (15,16) if scores[j]>.25 and pts[j,1]>0]
-                foot=float(max(pts[j,1] for j in visible)) if visible else y2
+                visible=[j for j in (15,16) if scores[j]>.55 and pts[j,1]>0]
+                foot=float(max(max(pts[j,1] for j in visible),y2-3)) if visible else y2
                 center=((x1+x2)/2,(y1+y2)/2)
                 choices.append((center,foot,pts.tolist(),scores.tolist()))
             if choices:
@@ -107,6 +107,7 @@ def analyze_video(path, scale=0, stride=4, sensitivity=.45, progress=None):
                 previous=selected[0]
                 observations.append((frame_no,selected[1]))
                 tracks[frame_no]={"points":selected[2],"conf":selected[3],
+                                  "foot_x":selected[0][0],
                                   "foot_y":selected[1]}
             if progress and frame_no % max(stride,int(fps))<stride:
                 progress(min(100,int(frame_no*100/max(1,count))))
