@@ -104,3 +104,9 @@ python -m unittest discover -s tests -v
 ### Ruler calibration and floor tape (indoor clip)
 
 In the Home view click **Calibrate ruler**. Click two marks **exactly 1.00 metre apart** on the yellow ruler, first and second, in the video frame. The measured distance sets pixels per metre and enables *approximate* metre readouts. If the ruler does not show two identifiable marks that far apart, do not guess; leave the measurement uncalibrated. The blue overlay is fixed to the pale floor tape detected near the lower edge of the first video frame. A separate standing-foot reference is used to calculate *jump displacement*: the foreground tape is not at the person's feet and therefore cannot be used as the foot takeoff y coordinate. The guide line toward the ruler is visual, not a full perspective correction. YOLO ankle detection can remain inaccurate when feet blur or leave the frame, so verify peak frames manually.
+
+## Zoomable ruler calibration (latest)
+
+On Home, use the **mouse wheel over the video** to zoom toward the cursor (up to 12×); **right-click and drag** to pan; choose **Reset zoom** to return to the full video. In Settings, enter the *actual distance in metres* between two readable marks on your ruler (for example 0.10 m for 10 cm). Back on Home, choose **Calibrate ruler**, zoom into the ruler and left-click those two marks. The coordinates are mapped back to the original frame, so zoom does not distort the calibration. A zoomed ruler offers more precise clicking, but cannot recover detail absent in the original recording.
+
+**Limitations:** YOLO foot/ankle tracking and jumping peak estimation are not validated to guaranteed accuracy. A pixel-to-metre calibration can still be biased by depth/perspective. Confirm a few jump heights manually before treating results as reliable. The portrait indoor video is a test, not broadcast-grade halfpipe measurement.
