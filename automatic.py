@@ -48,7 +48,7 @@ def find_jump_peaks(observations, fps, sensitivity=.45, baseline=None):
     raw_height = np.maximum(0, floor-feet)
     kernel = np.ones(5)/5
     smooth = np.convolve(np.pad(raw_height,(2,2),mode="edge"),kernel,mode="valid")
-    cutoff = 24 + (1-float(sensitivity))*26
+    cutoff = 12 + (1-float(sensitivity))*23
     airborne = smooth > cutoff
     events=[]
     start=None
@@ -58,16 +58,15 @@ def find_jump_peaks(observations, fps, sensitivity=.45, baseline=None):
             start=i
         elif not active and start is not None:
             end=i
-            # Ignore one-frame jitter and short shuffling steps.
-            if end-start>=3 and frames[end-1]-frames[start]>=max(3,int(fps*.18)):
+            if end-start>=2:
                 apex=start+int(np.argmax(smooth[start:end]))
-                if smooth[apex]>=cutoff and (not events or frames[apex]-events[-1][0] >= fps*.55):
+                if smooth[apex]>=cutoff and (not events or frames[apex]-events[-1][0] >= fps*.45):
                     events.append((int(frames[apex]),float(raw_height[apex])))
             start=None
     return events
 
 
-CACHE_VERSION=2
+CACHE_VERSION=1
 
 
 def _cache_file(path):
@@ -149,8 +148,7 @@ def analyze_video(path, scale=0, stride=4, sensitivity=.45, progress=None, force
             ok,frame=cap.read()
             if not ok: break
             h,w=frame.shape[:2]
-            if baseline is None and frame_no<=max(stride*12,int(fps*2)):
-                baseline=detect_tape_line(frame)
+            if frame_no==0: baseline=detect_tape_line(frame)
             result=model.predict(frame,imgsz=640,conf=.16,verbose=False,device="cpu")[0]
             boxes=result.boxes.xyxy.cpu().numpy() if result.boxes is not None else []
             kps=result.keypoints.xy.cpu().numpy() if result.keypoints is not None else []
