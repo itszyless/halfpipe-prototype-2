@@ -266,7 +266,7 @@ class App(QMainWindow):
         side.setContentsMargins(14, 23, 14, 18)
         side.setSpacing(4)
 
-        brand = QLabel("H")
+        brand = QLabel("")
         brand.setObjectName("brand")
         brand.setAlignment(Qt.AlignmentFlag.AlignCenter)
         side.addWidget(brand)
@@ -277,11 +277,12 @@ class App(QMainWindow):
         side.addSpacing(38)
 
         self.home_btn = make_button("", "home")
+        self.home_btn.setIconSize(QSize(32, 32))
         self.settings_btn = make_button("", "settings")
         for button in (self.home_btn, self.settings_btn):
             button.setObjectName("navButton")
             button.setFixedSize(54, 54)
-            button.setIconSize(QSize(27, 27))
+            button.setIconSize(QSize(32, 32))
             side.addWidget(button, alignment=Qt.AlignmentFlag.AlignHCenter)
         side.addStretch()
         
