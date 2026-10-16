@@ -301,14 +301,15 @@ class Worker(QThread):
     failed = Signal(str)
     progress = Signal(int)
 
-    def __init__(self, path, scale, stride, sensitivity):
+    def __init__(self, path, scale, stride, sensitivity, force=False):
         super().__init__()
         self.args = (path, scale, stride, sensitivity)
+        self.force=force
 
     def run(self):
         try:
             from automatic import analyze_video
-            self.finished_jumps.emit(analyze_video(*self.args, progress=self.progress.emit))
+            self.finished_jumps.emit(analyze_video(*self.args, progress=self.progress.emit,force=self.force))
         except Exception as exc:
             self.failed.emit(str(exc))
 
@@ -472,8 +473,11 @@ class App(QMainWindow):
         self.scan_btn = make_button("Run detection", primary=True)
         self.remove_btn = make_button("Remove point")
         self.scan_btn.clicked.connect(self.scan)
+        self.rescan_btn=make_button("Reanalyze")
+        self.rescan_btn.clicked.connect(lambda: self.scan(force=True))
         self.remove_btn.clicked.connect(self.remove_jump)
         tools.addWidget(self.scan_btn)
+        tools.addWidget(self.rescan_btn)
         tools.addWidget(self.calibrate_btn)
         tools.addWidget(self.reset_zoom_btn)
         tools.addWidget(self.pan_btn)
@@ -694,7 +698,7 @@ class App(QMainWindow):
         self.timeline.total=self.frames
         self.seek(0)
         self.setWindowTitle(f"Prototype V1.3 — {Path(filename).name}")
-        QTimer.singleShot(800, self.scan)  # automatic candidate scan of local clip
+        QTimer.singleShot(800, lambda: self.scan())  # load cache automatically, or analyze once
 
     def seek(self,n):
         if not self.cap:
@@ -805,33 +809,37 @@ class App(QMainWindow):
         self.save_sidecar()
         self.update_display()
 
-    def scan(self):
+    def scan(self,force=False):
         if not self.cap:
             self.notice.setText("Wait for the video or open your local MP4 first.")
             return
         self.timer.stop()
         self.scan_btn.setEnabled(False)
-        self.notice.setText("Analyzing prototype video… The pose model may download once.")
-        self.worker=Worker(self.path,self.pixels_per_metre,self.duration.value(),self.sensitivity.value()/100)
+        self.rescan_btn.setEnabled(False)
+        self.notice.setText("Loading saved tracking or analyzing video…")
+        self.worker=Worker(self.path,self.pixels_per_metre,self.duration.value(),self.sensitivity.value()/100,force=force)
         self.worker.progress.connect(lambda p: self.notice.setText(f"Analyzing video… {p}%"))
         self.worker.finished_jumps.connect(self.scan_done)
         self.worker.failed.connect(self.scan_failed)
         self.worker.start()
 
     def scan_done(self,proposals):
+        cached=isinstance(proposals,dict) and proposals.get("from_cache",False)
         if isinstance(proposals,dict):
             self.tracks=proposals.get("tracks",{})
             proposals=proposals.get("jumps",[])
         existing={j.frame for j in self.jumps}
         self.jumps.extend(j for j in proposals if j.frame not in existing)
         self.jumps.sort(key=lambda x:x.frame)
-        self.notice.setText(f"Found {len(proposals)} jump candidates. Fixed blue tape reference; metres need ruler calibration.")
+        self.notice.setText(f"{'Loaded saved analysis' if cached else 'Analysis saved for next time'} · {len(proposals)} jump candidates. Calibrate ruler for metres.")
         self.scan_btn.setEnabled(True)
+        self.rescan_btn.setEnabled(True)
         self.update_display()
         self.save_sidecar()
 
     def scan_failed(self,error):
         self.scan_btn.setEnabled(True)
+        self.rescan_btn.setEnabled(True)
         QMessageBox.warning(self,"Tracking failed",error)
         self.notice.setText("Automatic analysis failed. Check the model installation or video.")
 
