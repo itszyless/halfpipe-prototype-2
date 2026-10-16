@@ -483,6 +483,7 @@ class App(QMainWindow):
         self.timeline.total=self.frames
         self.seek(0)
         self.setWindowTitle(f"Prototype V1.3 — {Path(filename).name}")
+        QTimer.singleShot(800, self.scan)  # auto-analyze whenever a new video loads
 
     def seek(self,n):
         if not self.cap:
