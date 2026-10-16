@@ -828,9 +828,9 @@ class App(QMainWindow):
         if isinstance(proposals,dict):
             self.tracks=proposals.get("tracks",{})
             proposals=proposals.get("jumps",[])
-        existing={j.frame for j in self.jumps}
-        self.jumps.extend(j for j in proposals if j.frame not in existing)
-        self.jumps.sort(key=lambda x:x.frame)
+        manual=[j for j in self.jumps if j.source!="auto candidate"]
+        manual_frames={j.frame for j in manual}
+        self.jumps=sorted(manual+[j for j in proposals if j.frame not in manual_frames],key=lambda j:j.frame)
         self.notice.setText(f"{'Loaded saved analysis' if cached else 'Analysis saved for next time'} · {len(proposals)} jump candidates. Calibrate ruler for metres.")
         self.scan_btn.setEnabled(True)
         self.rescan_btn.setEnabled(True)
