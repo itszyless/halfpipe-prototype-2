@@ -94,6 +94,7 @@ class VideoCanvas(QWidget):
         self.mode = None
         self.lip_a = self.lip_b = self.hip = None
         self.show_overlay = True
+        self.pose = None
         self.setMinimumSize(360, 180)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setCursor(Qt.CursorShape.CrossCursor)
@@ -147,6 +148,26 @@ class VideoCanvas(QWidget):
                 target=(self.hip[0],lip_y_at_x(self.lip_a,self.lip_b,self.hip[0]))
                 p.setPen(QPen(QColor("#ffd54d"),2,Qt.PenStyle.DashLine))
                 p.drawLine(map_point(self.hip),map_point(target))
+            if self.pose:
+                from automatic import SKELETON
+                pts=self.pose["points"]
+                conf=self.pose["conf"]
+                p.setPen(QPen(QColor("#9af5c8"), 2))
+                for a,b in SKELETON:
+                    if conf[a]>.25 and conf[b]>.25:
+                        p.drawLine(map_point(pts[a]),map_point(pts[b]))
+                for i,pt in enumerate(pts):
+                    if conf[i]>.25:
+                        p.setBrush(QColor("#9af5c8"))
+                        p.drawEllipse(map_point(pt),3,3)
+                baseline=self.pose.get("baseline_y")
+                foot=self.pose.get("foot_y")
+                if baseline is not None and foot is not None:
+                    p.setPen(QPen(QColor("#48afff"),2))
+                    p.drawLine(map_point((0,baseline)),map_point((w,baseline)))
+                    x=next((pts[k][0] for k in (16,15) if conf[k]>.25),w/2)
+                    p.setPen(QPen(QColor("#ffc788"),2,Qt.PenStyle.DashLine))
+                    p.drawLine(map_point((x,foot)),map_point((x,baseline)))
         p.end()
 
 
@@ -243,6 +264,7 @@ class App(QMainWindow):
         self.frames=1
         self.frame_index=0
         self.jumps=[]
+        self.tracks={}
         self.mode=""
         self.lip_a=self.lip_b=self.hip=None
         self.pixels_per_metre=0.
@@ -524,6 +546,7 @@ class App(QMainWindow):
         self.frames=max(1,int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT)))
         self.frame_index=0
         self.jumps=[]
+        self.tracks={}
         self.lip_a=self.lip_b=self.hip=None
         self.pixels_per_metre=0
         self.scale.blockSignals(True)
@@ -551,12 +574,21 @@ class App(QMainWindow):
         self.canvas.lip_a=self.lip_a
         self.canvas.lip_b=self.lip_b
         self.canvas.hip=self.hip
+        if self.tracks:
+            nearest=min(self.tracks,key=lambda k:abs(k-self.frame_index))
+            self.canvas.pose=self.tracks[nearest] if abs(nearest-self.frame_index)<=max(2,self.duration.value()) else None
+        else:
+            self.canvas.pose=None
         self.canvas.update()
         self.timeline.current=self.frame_index
         self.timeline.jumps=self.jumps
         self.timeline.update()
         self.counter.setText(f"Frame {self.frame_index+1:,} / {self.frames:,}     {self.frame_index/self.fps:,.2f}s")
         current=next((j for j in self.jumps if j.frame==self.frame_index),None)
+        if current is None and self.canvas.pose:
+            px=self.canvas.pose.get("height_px",0)
+            self.measure.setText(f"{px:.0f} px · uncalibrated")
+            return
         if current:
             if current.height_m is not None:
                 self.measure.setText(f"{current.height_m:.2f} m  ·  estimated")
@@ -645,6 +677,9 @@ class App(QMainWindow):
         self.worker.start()
 
     def scan_done(self,proposals):
+        if isinstance(proposals,dict):
+            self.tracks=proposals.get("tracks",{})
+            proposals=proposals.get("jumps",[])
         existing={j.frame for j in self.jumps}
         self.jumps.extend(j for j in proposals if j.frame not in existing)
         self.jumps.sort(key=lambda x:x.frame)
