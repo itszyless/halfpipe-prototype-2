@@ -96,6 +96,10 @@ class VideoCanvas(QWidget):
         self.show_overlay = True
         self.pose = None
         self.pixels_per_metre = 0
+        self.zoom=1.0
+        self.pan_x=.5
+        self.pan_y=.5
+        self._drag_start=None
         self.setMinimumSize(360, 180)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setCursor(Qt.CursorShape.CrossCursor)
@@ -104,12 +108,15 @@ class VideoCanvas(QWidget):
         if self.frame is None:
             return QRectF()
         h, w = self.frame.shape[:2]
-        factor = min(self.width()/w, self.height()/h)
+        factor = min(self.width()/w, self.height()/h)*self.zoom
         sw, sh = w*factor, h*factor
-        return QRectF((self.width()-sw)/2, (self.height()-sh)/2, sw, sh)
+        return QRectF(self.width()/2-self.pan_x*sw,self.height()/2-self.pan_y*sh,sw,sh)
 
     def mousePressEvent(self, event):
         if self.frame is None:
+            return
+        if event.button() == Qt.MouseButton.RightButton:
+            self._drag_start=event.position()
             return
         box = self.frame_rect()
         if not box.contains(event.position()):
@@ -117,7 +124,41 @@ class VideoCanvas(QWidget):
         ih, iw = self.frame.shape[:2]
         x = (event.position().x()-box.x())/box.width()*iw
         y = (event.position().y()-box.y())/box.height()*ih
-        self.clicked_frame.emit(x,y)
+        if 0<=x<iw and 0<=y<ih:
+            self.clicked_frame.emit(x,y)
+
+    def wheelEvent(self,event):
+        if self.frame is None:
+            return
+        old=self.frame_rect()
+        mouse=event.position()
+        fx=(mouse.x()-old.x())/old.width()
+        fy=(mouse.y()-old.y())/old.height()
+        self.zoom=max(1.,min(12.,self.zoom*(1.25 if event.angleDelta().y()>0 else .8)))
+        h,w=self.frame.shape[:2]
+        scale=min(self.width()/w,self.height()/h)*self.zoom
+        self.pan_x=max(0.,min(1.,fx-(mouse.x()-self.width()/2)/(w*scale)))
+        self.pan_y=max(0.,min(1.,fy-(mouse.y()-self.height()/2)/(h*scale)))
+        self.update()
+
+    def mouseMoveEvent(self,event):
+        if self._drag_start is not None and self.frame is not None:
+            dx=event.position().x()-self._drag_start.x()
+            dy=event.position().y()-self._drag_start.y()
+            area=self.frame_rect()
+            self.pan_x=max(0.,min(1.,self.pan_x-dx/area.width()))
+            self.pan_y=max(0.,min(1.,self.pan_y-dy/area.height()))
+            self._drag_start=event.position()
+            self.update()
+
+    def mouseReleaseEvent(self,event):
+        self._drag_start=None
+
+    def reset_zoom(self):
+        self.zoom=1.
+        self.pan_x=.5
+        self.pan_y=.5
+        self.update()
 
     def paintEvent(self, event):
         p=QPainter(self)
@@ -132,6 +173,7 @@ class VideoCanvas(QWidget):
         h,w=rgb.shape[:2]
         im=QImage(rgb.data,w,h,rgb.strides[0],QImage.Format.Format_RGB888).copy()
         box=self.frame_rect()
+        p.setClipRect(self.rect())
         p.drawImage(box,im)
         def map_point(pt):
             return QPointF(box.x()+pt[0]/w*box.width(),box.y()+pt[1]/h*box.height())
@@ -391,6 +433,8 @@ class App(QMainWindow):
         tools = QHBoxLayout()
         tools.setSpacing(8)
         self.calibrate_btn = make_button("Calibrate ruler")
+        self.reset_zoom_btn=make_button("Reset zoom")
+        self.reset_zoom_btn.clicked.connect(self.canvas.reset_zoom)
         self.calibrate_btn.clicked.connect(self.begin_ruler_calibration)
         self.scan_btn = make_button("Run detection", primary=True)
         self.remove_btn = make_button("Remove point")
@@ -398,6 +442,7 @@ class App(QMainWindow):
         self.remove_btn.clicked.connect(self.remove_jump)
         tools.addWidget(self.scan_btn)
         tools.addWidget(self.calibrate_btn)
+        tools.addWidget(self.reset_zoom_btn)
         tools.addWidget(self.remove_btn)
         tools.addStretch()
         tools.addWidget(textlabel("●  Detected jump", 10, MUTED))
@@ -430,7 +475,16 @@ class App(QMainWindow):
         outer.addWidget(textlabel("Measurement & detection preferences",12,MUTED))
         outer.addSpacing(7)
         outer.addWidget(textlabel("MEASUREMENT",11,MUTED,True))
-        outer.addWidget(textlabel("Pixels per metre",13,INK,True))
+        outer.addWidget(textlabel("Known ruler distance",13,INK,True))
+        self.reference_m=QDoubleSpinBox()
+        self.reference_m.setRange(.01,10)
+        self.reference_m.setValue(1.)
+        self.reference_m.setSuffix(" m")
+        self.reference_m.setMaximumWidth(460)
+        self.reference_m.lineEdit().setTextMargins(20,0,8,0)
+        outer.addWidget(self.reference_m)
+        outer.addWidget(textlabel("Distance between two readable ruler marks.",11,MUTED))
+        outer.addWidget(textlabel("Calculated pixels per metre",13,INK,True))
         outer.addWidget(textlabel("Set a real-world scale for this camera framing. 0 = unknown.",11,MUTED))
         self.scale=QDoubleSpinBox()
         self.scale.setRange(0,100000)
@@ -526,8 +580,8 @@ class App(QMainWindow):
                 if distance<30:
                     self.notice.setText("Marks too close. Pick a known 1 metre span.")
                     return
-                self.scale.setValue(distance)
-                self.notice.setText(f"Scale calibrated: {distance:.1f} px/m; approximate.")
+                self.scale.setValue(distance/self.reference_m.value())
+                self.notice.setText(f"Calibrated: {distance/self.reference_m.value():.1f} pixels per metre (estimated)")
                 self.update_display()
             return
         if self.mode=="lip":
