@@ -18,16 +18,16 @@ def find_blue_lip(frame, x):
     mask = cv2.inRange(hsv, np.array([90, 65, 65]), np.array([132, 255, 255]))
     h, w = mask.shape
     xx = max(0, min(w - 1, int(x)))
-    half = max(6, round(w * .035))
-    crop = mask[:, max(0, xx-half): min(w, xx+half)]
+    half = max(12, round(w * .09))
+    crop = mask[int(h*.65):, max(0, xx-half): min(w, xx+half)]
     scores = np.count_nonzero(crop, axis=1)
     if not scores.size:
         return None
     # Only accept a moderately continuous blue segment.
     y = int(np.argmax(scores))
-    if scores[y] < max(3, crop.shape[1] * .16):
+    if scores[y] < max(3, crop.shape[1] * .08):
         return None
-    return y
+    return y + int(h*.65)
 
 
 def analyze_video(path, scale=0, stride=4, sensitivity=.45, progress=None):
