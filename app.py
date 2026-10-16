@@ -83,7 +83,7 @@ class VideoCanvas(QWidget):
         self.mode = None
         self.lip_a = self.lip_b = self.hip = None
         self.show_overlay = True
-        self.setMinimumSize(360, 215)
+        self.setMinimumSize(360, 180)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setCursor(Qt.CursorShape.CrossCursor)
 
@@ -109,10 +109,10 @@ class VideoCanvas(QWidget):
     def paintEvent(self, event):
         p=QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.fillRect(self.rect(), QColor("#101827"))
+        p.fillRect(self.rect(), QColor("#18202c"))
         if self.frame is None:
             p.setPen(QColor("#aeb6c8"))
-            p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "Open a video to get started")
+            p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "Waiting for video")
             p.end()
             return
         rgb=cv2.cvtColor(self.frame,cv2.COLOR_BGR2RGB)
@@ -242,93 +242,122 @@ class App(QMainWindow):
         QTimer.singleShot(200, self.load_default_video)
 
     def build_ui(self):
-        root=QWidget()
+        root = QWidget()
         self.setCentralWidget(root)
-        layout=QHBoxLayout(root)
-        layout.setContentsMargins(0,0,0,0)
-        layout.setSpacing(0)
-        sidebar=QFrame()
+        shell = QHBoxLayout(root)
+        shell.setContentsMargins(0, 0, 0, 0)
+        shell.setSpacing(0)
+
+        sidebar = QFrame()
         sidebar.setObjectName("side")
-        sidebar.setFixedWidth(142)
-        sl=QVBoxLayout(sidebar)
-        sl.setContentsMargins(12,23,12,15)
-        sl.setSpacing(7)
-        logo=QLabel("◢  Prototype V1.3")
-        logo.setStyleSheet("font-weight:700;font-size:15px;margin-bottom:16px;")
-        sl.addWidget(logo)
-        self.home_btn=make_button("  Home","home")
-        self.settings_btn=make_button("  Settings","settings")
-        sl.addWidget(self.home_btn)
-        sl.addWidget(self.settings_btn)
-        sl.addStretch()
-        sl.addWidget(textlabel("Automatic analysis • Beta",10,MUTED))
-        layout.addWidget(sidebar)
-        self.pages=QStackedWidget()
-        layout.addWidget(self.pages,1)
+        sidebar.setFixedWidth(170)
+        side = QVBoxLayout(sidebar)
+        side.setContentsMargins(18, 25, 18, 20)
+        side.setSpacing(4)
+
+        brand = QLabel("HALFPIPE")
+        brand.setObjectName("brand")
+        side.addWidget(brand)
+        version = QLabel("PROTOTYPE  /  01.3")
+        version.setObjectName("version")
+        side.addWidget(version)
+        side.addSpacing(38)
+
+        self.home_btn = make_button("  Overview", "home")
+        self.settings_btn = make_button("  Settings", "settings")
+        for button in (self.home_btn, self.settings_btn):
+            button.setObjectName("navButton")
+            button.setMinimumHeight(42)
+            side.addWidget(button)
+        side.addStretch()
+        side.addWidget(textlabel("Oliver Weiner  ·  2EHIF", 10, MUTED))
+        shell.addWidget(sidebar)
+
+        self.pages = QStackedWidget()
+        shell.addWidget(self.pages, 1)
         self.build_home()
         self.build_settings()
-        self.home_btn.clicked.connect(lambda:self.show_page(0))
-        self.settings_btn.clicked.connect(lambda:self.show_page(1))
+        self.home_btn.clicked.connect(lambda: self.show_page(0))
+        self.settings_btn.clicked.connect(lambda: self.show_page(1))
         self.show_page(0)
 
     def build_home(self):
-        page=QWidget()
-        main=QVBoxLayout(page)
-        main.setContentsMargins(22,18,22,16)
-        main.setSpacing(9)
-        top=QHBoxLayout()
-        title=textlabel("Jump analysis",21,INK,True)
-        top.addWidget(title)
+        page = QWidget()
+        main = QVBoxLayout(page)
+        main.setContentsMargins(27, 25, 27, 20)
+        main.setSpacing(0)
+
+        top = QHBoxLayout()
+        heading = QVBoxLayout()
+        heading.setSpacing(4)
+        heading.addWidget(textlabel("Video analysis", 23, INK, True))
+        heading.addWidget(textlabel("Calgary  /  Freeski halfpipe", 11, MUTED))
+        top.addLayout(heading)
         top.addStretch()
-        self.open_btn=make_button("Open video","open",True)
+        self.open_btn = make_button("Change video", "open")
         self.open_btn.clicked.connect(self.open_video)
-        top.addWidget(self.open_btn)
+        top.addWidget(self.open_btn, alignment=Qt.AlignmentFlag.AlignVCenter)
         main.addLayout(top)
-        main.addWidget(textlabel("Automatic jump detection and frame-by-frame review",12,MUTED))
-        self.canvas=VideoCanvas()
+        main.addSpacing(18)
+
+        self.canvas = VideoCanvas()
         self.canvas.clicked_frame.connect(self.canvas_clicked)
-        main.addWidget(self.canvas,1)
-        playback=QHBoxLayout()
-        self.prev_btn=make_button("","prev")
-        self.play_btn=make_button("","play")
-        self.next_btn=make_button("","next")
-        for b in [self.prev_btn,self.play_btn,self.next_btn]:
-            b.setFixedWidth(48)
-            playback.addWidget(b)
+        self.canvas.setObjectName("video")
+        main.addWidget(self.canvas, 1)
+        main.addSpacing(13)
+
+        transport = QHBoxLayout()
+        transport.setSpacing(7)
+        self.prev_btn = make_button("", "prev")
+        self.play_btn = make_button("", "play")
+        self.next_btn = make_button("", "next")
+        for button in (self.prev_btn, self.play_btn, self.next_btn):
+            button.setObjectName("transport")
+            button.setFixedSize(37, 34)
+            transport.addWidget(button)
         self.prev_btn.clicked.connect(self.previous_frame)
         self.play_btn.clicked.connect(self.toggle_play)
         self.next_btn.clicked.connect(self.next_frame)
-        self.counter=textlabel("Frame 0 / 0",12,MUTED)
-        playback.addSpacing(15)
-        playback.addWidget(self.counter)
-        playback.addStretch()
-        self.measure=textlabel("— m",20,INK,True)
-        playback.addWidget(self.measure)
-        main.addLayout(playback)
-        self.timeline=JumpTimeline()
+        transport.addSpacing(8)
+        self.counter = textlabel("Frame 0 / 0", 11, MUTED)
+        transport.addWidget(self.counter)
+        transport.addStretch()
+        self.measure = textlabel("—", 21, INK, True)
+        transport.addWidget(self.measure)
+        main.addLayout(transport)
+        main.addSpacing(10)
+
+        self.timeline = JumpTimeline()
         self.timeline.seek.connect(self.seek)
+        self.timeline.setFixedHeight(36)
         main.addWidget(self.timeline)
-        description=QHBoxLayout()
-        description.addWidget(textlabel("Orange dots: detected candidates • estimates require calibration",11,MUTED))
-        description.addStretch()
-        main.addLayout(description)
-        actions=QHBoxLayout()
-        self.lip_btn=make_button("Set lip line","pin")
-        self.hip_btn=make_button("Select hip","pin")
-        self.add_btn=make_button("Save jump","save",True)
-        self.remove_btn=make_button("Remove marker","delete")
-        self.scan_btn=make_button("Auto-detect jumps",primary=True)
-        for btn in [self.scan_btn,self.remove_btn]:
-            actions.addWidget(btn)
-        actions.addStretch()
-        main.addLayout(actions)
-        self.notice=textlabel("Select two points along the blue lip line, then the athlete's hip.",11,MUTED)
-        main.addWidget(self.notice)
-        self.lip_btn.clicked.connect(lambda:self.set_mode("lip"))
-        self.hip_btn.clicked.connect(lambda:self.set_mode("hip"))
-        self.add_btn.clicked.connect(self.add_jump)
-        self.remove_btn.clicked.connect(self.remove_jump)
+        main.addSpacing(8)
+
+        tools = QHBoxLayout()
+        tools.setSpacing(8)
+        self.scan_btn = make_button("Run detection", primary=True)
+        self.remove_btn = make_button("Remove point")
         self.scan_btn.clicked.connect(self.scan)
+        self.remove_btn.clicked.connect(self.remove_jump)
+        tools.addWidget(self.scan_btn)
+        tools.addWidget(self.remove_btn)
+        tools.addStretch()
+        tools.addWidget(textlabel("●  Detected jump", 10, MUTED))
+        main.addLayout(tools)
+        main.addSpacing(11)
+
+        self.notice = textlabel("Preparing video…", 11, MUTED)
+        self.notice.setObjectName("status")
+        main.addWidget(self.notice)
+
+        # Legacy manual helpers remain available internally for troubleshooting,
+        # but are intentionally absent from the streamlined primary interface.
+        self.lip_btn = make_button("Set lip line", "pin")
+        self.hip_btn = make_button("Select hip", "pin")
+        self.add_btn = make_button("Save jump", "save")
+        self.lip_btn.clicked.connect(lambda: self.set_mode("lip"))
+        self.hip_btn.clicked.connect(lambda: self.set_mode("hip"))
+        self.add_btn.clicked.connect(self.add_jump)
         self.pages.addWidget(page)
 
     def build_settings(self):
@@ -658,20 +687,72 @@ def main():
         QFontDatabase.addApplicationFont(str(font_file))
     app.setFont(QFont("Inter" if "Inter" in QFontDatabase.families() else "Segoe UI", 10))
     app.setStyleSheet("""
-        QWidget { background:#ffffff; color:#151b2b; font-family:Inter,'Segoe UI',sans-serif; font-size:12px; }
-        QFrame#side { background:#fbfcff; border-right:1px solid #e8ecf2; }
-        QFrame#side QLabel { background:transparent; }
-        QPushButton { background:#f6f8fb; border:1px solid #e6ebf1; border-radius:9px; padding:7px 10px; text-align:center; }
-        QPushButton:hover { background:#eaf0ff; }
-        QPushButton:disabled { color:#afb7c7; }
-        QPushButton[primary="true"] { background:#3969ec; border-color:#3969ec; color:white; font-weight:600; }
-        QPushButton[primary="true"]:hover { background:#2859d8; }
-        QPushButton[selected="true"] { background:#eaf0ff; color:#2254cf; font-weight:600; }
-        QDoubleSpinBox,QSpinBox { border:1px solid #e2e8f0; border-radius:10px; min-height:39px; padding-left:17px; padding-right:12px; }
-        QScrollArea { border:0; }
-        QSlider::groove:horizontal { height:5px; background:#e3e9f2; border-radius:2px; }
-        QSlider::handle:horizontal { width:17px; margin:-6px 0; background:#3969ec; border-radius:8px; }
-        QCheckBox { spacing:9px; }
+        QWidget {
+            background: #ffffff;
+            color: #202630;
+            font-family: Inter, 'Segoe UI', sans-serif;
+            font-size: 12px;
+        }
+        QFrame#side {
+            background: #f7f8fa;
+            border-right: 1px solid #e7e9ed;
+        }
+        QFrame#side QLabel { background: transparent; }
+        QLabel#brand {
+            color: #202630;
+            font-size: 17px;
+            font-weight: 800;
+            letter-spacing: 1px;
+        }
+        QLabel#version {
+            color: #969daa;
+            font-size: 10px;
+            letter-spacing: 1px;
+        }
+        QLabel#status { color: #8993a1; font-size: 11px; }
+        QPushButton {
+            background: #ffffff;
+            border: 1px solid #e5e8ed;
+            border-radius: 7px;
+            padding: 7px 12px;
+            color: #394252;
+            font-size: 12px;
+        }
+        QPushButton:hover { background: #f1f4f7; }
+        QPushButton:disabled { color: #b3b9c3; }
+        QPushButton#navButton {
+            background: transparent;
+            border: none;
+            text-align: left;
+            padding-left: 10px;
+            font-weight: 500;
+        }
+        QPushButton#navButton:hover { background: #eceff3; }
+        QPushButton#navButton[selected="true"] {
+            color: #1b2535;
+            background: #e7ebf1;
+            font-weight: 600;
+        }
+        QPushButton#transport { padding: 4px; border-color: #e6e9ef; }
+        QPushButton[primary="true"] {
+            background: #222c3a;
+            color: white;
+            border-color: #222c3a;
+            font-weight: 600;
+        }
+        QPushButton[primary="true"]:hover { background: #374558; }
+        QDoubleSpinBox, QSpinBox {
+            background: #ffffff;
+            border: 1px solid #dfe3ea;
+            border-radius: 7px;
+            min-height: 34px;
+            padding-left: 14px;
+            padding-right: 12px;
+        }
+        QScrollArea { border: none; }
+        QSlider::groove:horizontal { height: 4px; background: #e4e8ee; border-radius: 2px; }
+        QSlider::handle:horizontal { width: 16px; margin: -6px 0; background: #303c4f; border-radius: 8px; }
+        QCheckBox { spacing: 10px; }
     """)
     win=App()
     icon=ROOT/"assets"/"app-icon.svg"
