@@ -112,6 +112,13 @@ def _write_cache(path,key,data):
             pass
 
 
+def has_cached_analysis(path,stride=4,sensitivity=.45):
+    try:
+        return _read_cache(path,_cache_key(path,stride,sensitivity)) is not None
+    except OSError:
+        return False
+
+
 def analyze_video(path, scale=0, stride=4, sensitivity=.45, progress=None, force=False):
     key=_cache_key(path,stride,sensitivity)
     if not force:
