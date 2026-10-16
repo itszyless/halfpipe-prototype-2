@@ -1,3 +1,5 @@
+> **Update:** The latest code loads the Calgary video automatically (downloads it to the ignored `video/` folder on first launch) and includes pose-based automatic candidate detection with YOLO. It uses a background worker so the UI remains responsive. The first AI analysis downloads `yolov8n-pose.pt`; internet access is required. Run `pip install -r requirements.txt` again after pulling. A video can be loaded manually if the hosted link is inaccessible. Orange markers are AI-generated **unverified candidates**, not guaranteed jumps; a physically calibrated camera is still required for metre estimates. Inter is used when installed on the computer, otherwise Segoe UI. Basic UI fade transitions have been added. Large or long videos may analyze slowly on CPU.
+
 # Prototype V1.2 — Halfpipe Jump Measurement
 
 **Made by Oliver Weiner, 2EHIF.** Independent prototype-2 for reviewing freeski/snowboard halfpipe footage.
