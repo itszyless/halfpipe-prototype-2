@@ -65,7 +65,7 @@ def make_button(text, icon=None, primary=False):
         b.setIcon(svg_icon(icon, "#ffffff" if primary else INK))
     b.setCursor(Qt.CursorShape.PointingHandCursor)
     b.setProperty("primary", primary)
-    b.setMinimumHeight(39)
+    b.setMinimumHeight(34)
     return b
 
 def textlabel(txt, size=12, color=INK, bold=False):
@@ -83,7 +83,7 @@ class VideoCanvas(QWidget):
         self.mode = None
         self.lip_a = self.lip_b = self.hip = None
         self.show_overlay = True
-        self.setMinimumSize(460, 280)
+        self.setMinimumSize(360, 215)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setCursor(Qt.CursorShape.CrossCursor)
 
@@ -224,8 +224,8 @@ class App(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Prototype V1.3 — Halfpipe")
-        self.resize(1160,760)
-        self.setMinimumSize(830,550)
+        self.setFixedSize(960, 610)
+        self.setWindowFlag(Qt.WindowType.WindowMaximizeButtonHint, False)
         self.cap=None
         self.path=None
         self.fps=30.
@@ -249,12 +249,12 @@ class App(QMainWindow):
         layout.setSpacing(0)
         sidebar=QFrame()
         sidebar.setObjectName("side")
-        sidebar.setFixedWidth(174)
+        sidebar.setFixedWidth(142)
         sl=QVBoxLayout(sidebar)
-        sl.setContentsMargins(14,28,14,18)
-        sl.setSpacing(10)
+        sl.setContentsMargins(12,23,12,15)
+        sl.setSpacing(7)
         logo=QLabel("◢  Prototype V1.3")
-        logo.setStyleSheet("font-weight:700;font-size:15px;margin-bottom:30px;")
+        logo.setStyleSheet("font-weight:700;font-size:15px;margin-bottom:16px;")
         sl.addWidget(logo)
         self.home_btn=make_button("  Home","home")
         self.settings_btn=make_button("  Settings","settings")
@@ -274,17 +274,17 @@ class App(QMainWindow):
     def build_home(self):
         page=QWidget()
         main=QVBoxLayout(page)
-        main.setContentsMargins(29,24,29,23)
-        main.setSpacing(13)
+        main.setContentsMargins(22,18,22,16)
+        main.setSpacing(9)
         top=QHBoxLayout()
-        title=textlabel("Jump analysis",25,INK,True)
+        title=textlabel("Jump analysis",21,INK,True)
         top.addWidget(title)
         top.addStretch()
         self.open_btn=make_button("Open video","open",True)
         self.open_btn.clicked.connect(self.open_video)
         top.addWidget(self.open_btn)
         main.addLayout(top)
-        main.addWidget(textlabel("Automatic skier detection • frame-by-frame playback • jump timeline",12,MUTED))
+        main.addWidget(textlabel("Automatic jump detection and frame-by-frame review",12,MUTED))
         self.canvas=VideoCanvas()
         self.canvas.clicked_frame.connect(self.canvas_clicked)
         main.addWidget(self.canvas,1)
@@ -302,21 +302,21 @@ class App(QMainWindow):
         playback.addSpacing(15)
         playback.addWidget(self.counter)
         playback.addStretch()
-        self.measure=textlabel("— m",23,INK,True)
+        self.measure=textlabel("— m",20,INK,True)
         playback.addWidget(self.measure)
         main.addLayout(playback)
         self.timeline=JumpTimeline()
         self.timeline.seek.connect(self.seek)
         main.addWidget(self.timeline)
         description=QHBoxLayout()
-        description.addWidget(textlabel("Orange markers: automatic jump candidates • verify before judging",11,MUTED))
+        description.addWidget(textlabel("Orange dots: detected candidates • estimates require calibration",11,MUTED))
         description.addStretch()
         main.addLayout(description)
         actions=QHBoxLayout()
         self.lip_btn=make_button("Set lip line","pin")
         self.hip_btn=make_button("Select hip","pin")
         self.add_btn=make_button("Save jump","save",True)
-        self.remove_btn=make_button("Remove jump","delete")
+        self.remove_btn=make_button("Remove marker","delete")
         self.scan_btn=make_button("Auto-detect jumps",primary=True)
         for btn in [self.scan_btn,self.remove_btn]:
             actions.addWidget(btn)
@@ -337,9 +337,9 @@ class App(QMainWindow):
         scroller.setFrameShape(QFrame.Shape.NoFrame)
         page=QWidget()
         outer=QVBoxLayout(page)
-        outer.setContentsMargins(40,32,40,32)
-        outer.setSpacing(18)
-        outer.addWidget(textlabel("Settings",26,INK,True))
+        outer.setContentsMargins(30,24,30,24)
+        outer.setSpacing(12)
+        outer.addWidget(textlabel("Settings",22,INK,True))
         outer.addWidget(textlabel("Measurement & detection preferences",12,MUTED))
         outer.addSpacing(7)
         outer.addWidget(textlabel("MEASUREMENT",11,MUTED,True))
@@ -384,6 +384,7 @@ class App(QMainWindow):
         outer.addWidget(textlabel("Made by Oliver Weiner, 2EHIF",10,"#a6aeba"))
         outer.addStretch()
         scroller.setWidget(page)
+        scroller.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.pages.addWidget(scroller)
 
     def show_page(self,index):
@@ -650,10 +651,10 @@ def main():
         QFontDatabase.addApplicationFont(str(font_file))
     app.setFont(QFont("Inter" if "Inter" in QFontDatabase.families() else "Segoe UI", 10))
     app.setStyleSheet("""
-        QWidget { background:#ffffff; color:#151b2b; font-family:Inter,'Segoe UI',sans-serif; font-size:13px; }
+        QWidget { background:#ffffff; color:#151b2b; font-family:Inter,'Segoe UI',sans-serif; font-size:12px; }
         QFrame#side { background:#fbfcff; border-right:1px solid #e8ecf2; }
         QFrame#side QLabel { background:transparent; }
-        QPushButton { background:#f6f8fb; border:1px solid #e6ebf1; border-radius:11px; padding:9px 14px; text-align:center; }
+        QPushButton { background:#f6f8fb; border:1px solid #e6ebf1; border-radius:9px; padding:7px 10px; text-align:center; }
         QPushButton:hover { background:#eaf0ff; }
         QPushButton:disabled { color:#afb7c7; }
         QPushButton[primary="true"] { background:#3969ec; border-color:#3969ec; color:white; font-weight:600; }
