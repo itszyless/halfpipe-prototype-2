@@ -13,14 +13,30 @@ SKELETON = [(5,6),(5,7),(7,9),(6,8),(8,10),(5,11),(6,12),
             (1,3),(2,4)]
 
 
-def find_jump_peaks(observations, fps, sensitivity=.45):
+def detect_tape_line(frame):
+    """Find the real blue floor tape once, using first frame only."""
+    hsv=cv2.cvtColor(frame,cv2.COLOR_BGR2HSV)
+    h,w=hsv.shape[:2]
+    start=int(h*.70)
+    mask=cv2.inRange(hsv[start:],np.array([87,40,35]),np.array([132,255,255]))
+    mask[:,int(w*.88):]=0
+    scores=np.count_nonzero(mask,axis=1)
+    if not len(scores): return None
+    for y in np.argsort(scores)[::-1][:15]:
+        if scores[y]<max(10,int(w*.1)): continue
+        xs=np.where(mask[max(0,y-2):y+3]>0)[1]
+        if len(xs) and np.ptp(xs)>w*.4: return float(start+y)
+    return None
+
+
+def find_jump_peaks(observations, fps, sensitivity=.45, baseline=None):
     """Select highest measured feet position in each airborne interval."""
     if len(observations) < 5:
         return []
     frames = np.array([v[0] for v in observations], dtype=int)
     feet = np.array([v[1] for v in observations], dtype=float)
     # The ground reference is the lower foot location reached while standing.
-    floor = float(np.percentile(feet, 90))
+    floor = float(baseline) if baseline is not None else float(np.percentile(feet, 90))
     raw_height = np.maximum(0, floor-feet)
     kernel = np.ones(5)/5
     smooth = np.convolve(np.pad(raw_height,(2,2),mode="edge"),kernel,mode="valid")
@@ -57,12 +73,14 @@ def analyze_video(path, scale=0, stride=4, sensitivity=.45, progress=None):
     tracks={}
     observations=[]
     previous=None
+    baseline=None
     try:
         for frame_no in range(0,count,stride):
             cap.set(cv2.CAP_PROP_POS_FRAMES,frame_no)
             ok,frame=cap.read()
             if not ok: break
             h,w=frame.shape[:2]
+            if frame_no==0: baseline=detect_tape_line(frame)
             result=model.predict(frame,imgsz=640,conf=.16,verbose=False,device="cpu")[0]
             boxes=result.boxes.xyxy.cpu().numpy() if result.boxes is not None else []
             kps=result.keypoints.xy.cpu().numpy() if result.keypoints is not None else []
@@ -89,13 +107,11 @@ def analyze_video(path, scale=0, stride=4, sensitivity=.45, progress=None):
                 progress(min(100,int(frame_no*100/max(1,count))))
     finally:
         cap.release()
-    events=find_jump_peaks(observations,fps,sensitivity)
-    # The floor baseline for the displayed blue line.
-    floor=float(np.percentile([v[1] for v in observations],90)) if observations else None
-    if floor is not None:
-        for record in tracks.values():
-            record["baseline_y"]=floor
-            record["height_px"]=max(0.,floor-record["foot_y"])
+    events=find_jump_peaks(observations,fps,sensitivity,baseline)
+    floor=baseline
+    for record in tracks.values():
+        record["baseline_y"]=floor
+        record["height_px"]=max(0.,floor-record["foot_y"]) if floor is not None else None
     # Do not invent metres from a camera scale that hasn't been calibrated.
     jumps=[Jump(frame=f,height_m=None,pixel_height=px,source="auto candidate") for f,px in events]
     return {"jumps":jumps,"tracks":tracks,"baseline":floor}
