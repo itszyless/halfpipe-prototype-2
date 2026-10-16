@@ -26,7 +26,7 @@ from measurement import Jump, metres_from_pixels, pixel_height_above_lip, track_
 ROOT = Path(__file__).resolve().parent
 SAVE_SUFFIX = ".prototype-v1.2.json"
 VIDEO_URL = "https://s3.eu-central-1.wasabisys.com/judges/2025_26/freeski/Calgary%20(HP)/FK%20Finals%20-%201%20-%20Camera3%20-%20[10-30-18]%20[12-03-12].mp4"
-VIDEO_FILE = ROOT / "video" / "Calgary-Finals-Camera3.mp4"
+VIDEO_FILE = ROOT / "video" / "prototypev1.mp4"
 WHITE = "#0c0e12"
 INK = "#f3f5f8"
 MUTED = "#9aa2b1"
@@ -308,7 +308,7 @@ class App(QMainWindow):
         heading = QVBoxLayout()
         heading.setSpacing(4)
         heading.addWidget(textlabel("Video analysis", 23, INK, True))
-        heading.addWidget(textlabel("Calgary  /  Freeski halfpipe", 11, MUTED))
+        heading.addWidget(textlabel("Prototype V1  /  Jump height experiment", 11, MUTED))
         top.addLayout(heading)
         top.addStretch()
         self.open_btn = make_button("Change video", "open")
@@ -482,25 +482,19 @@ class App(QMainWindow):
         self.update_display()
 
     def load_default_video(self):
-        # Prefer user-provided local footage; only download when no file exists.
-        candidates = [VIDEO_FILE]
-        for folder in (ROOT / "video", ROOT):
-            if folder.exists():
-                for pattern in ("*.mp4", "*.mov", "*.mkv", "*.avi"):
-                    candidates.extend(sorted(folder.glob(pattern)))
+        # The local 23-second demonstration clip is the default.
+        candidates = [
+            ROOT / "video" / "prototypev1.mp4",
+            ROOT / "videos" / "prototypev1.mp4",
+            ROOT / "prototypev1.mp4",
+        ]
         for candidate in candidates:
-            if candidate.is_file() and candidate.stat().st_size > 1024 * 1024:
+            if candidate.is_file():
                 self.load_video(str(candidate))
-                self.notice.setText("Local video loaded. Automatic analysis started.")
+                self.notice.setText("Prototype video loaded. Automatic analysis is starting.")
                 return
-        self.notice.setText("Downloading Calgary video (first launch only)…")
-        self.open_btn.setEnabled(False)
-        self.downloader = DefaultVideoDownload()
-        self.downloader.progress.connect(
-            lambda p: self.notice.setText(f"Downloading Calgary video… {p}%"))
-        self.downloader.complete.connect(self.default_video_ready)
-        self.downloader.failed.connect(self.default_video_failed)
-        self.downloader.start()
+        self.notice.setText("Place prototypev1.mp4 inside the video folder, then restart, or use Change video.")
+        self.open_btn.setEnabled(True)
 
     def default_video_ready(self, path):
         self.open_btn.setEnabled(True)
@@ -539,7 +533,7 @@ class App(QMainWindow):
         self.timeline.total=self.frames
         self.seek(0)
         self.setWindowTitle(f"Prototype V1.3 — {Path(filename).name}")
-        QTimer.singleShot(800, self.scan)  # auto-analyze whenever a new video loads
+        QTimer.singleShot(800, self.scan)  # automatic candidate scan of local clip
 
     def seek(self,n):
         if not self.cap:
@@ -626,7 +620,7 @@ class App(QMainWindow):
             return
         self.timer.stop()
         self.scan_btn.setEnabled(False)
-        self.notice.setText("Preparing pose AI. First run may download the model…")
+        self.notice.setText("Analyzing prototype video… The pose model may download once.")
         self.worker=Worker(self.path,self.pixels_per_metre,self.duration.value(),self.sensitivity.value()/100)
         self.worker.progress.connect(lambda p: self.notice.setText(f"Analyzing video… {p}%"))
         self.worker.finished_jumps.connect(self.scan_done)
