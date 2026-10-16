@@ -199,9 +199,12 @@ class VideoCanvas(QWidget):
             p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "Waiting for video")
             p.end()
             return
-        rgb=cv2.cvtColor(self.frame,cv2.COLOR_BGR2RGB)
-        h,w=rgb.shape[:2]
-        im=QImage(rgb.data,w,h,rgb.strides[0],QImage.Format.Format_RGB888).copy()
+        h,w=self.frame.shape[:2]
+        factor=min(1.,max(600,int(max(self.width(),self.height())*1.5))/max(w,h)) if self.zoom<=1.05 else 1.
+        display=self.frame if factor>=1. else cv2.resize(self.frame,(max(1,round(w*factor)),max(1,round(h*factor))))
+        rgb=cv2.cvtColor(display,cv2.COLOR_BGR2RGB)
+        dh,dw=rgb.shape[:2]
+        im=QImage(rgb.data,dw,dh,rgb.strides[0],QImage.Format.Format_RGB888).copy()
         box=self.frame_rect()
         p.setClipRect(self.rect())
         p.drawImage(box,im)
@@ -352,6 +355,7 @@ class App(QMainWindow):
         self.fps=30.
         self.frames=1
         self.frame_index=0
+        self._next_decode_index=0
         self.jumps=[]
         self.tracks={}
         self.mode=""
@@ -704,8 +708,10 @@ class App(QMainWindow):
         if not self.cap:
             return
         self.frame_index=max(0,min(self.frames-1,int(n)))
-        self.cap.set(cv2.CAP_PROP_POS_FRAMES,self.frame_index)
+        if self._next_decode_index != self.frame_index:
+            self.cap.set(cv2.CAP_PROP_POS_FRAMES,self.frame_index)
         ok,img=self.cap.read()
+        self._next_decode_index=self.frame_index+1
         if not ok:
             self.notice.setText("Unable to read requested frame.")
             return
