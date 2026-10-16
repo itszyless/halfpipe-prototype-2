@@ -1,0 +1,5 @@
+{
+  "pixels_per_metre": null,
+  "reference_length_metres": 1.0,
+  "notes": "Measure a known real-world distance before trusting metres."
+}
