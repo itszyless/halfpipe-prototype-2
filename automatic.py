@@ -1,115 +1,101 @@
-"""Experimental jump detection for the stationary 23-second indoor prototype.
+"""Prototype YOLO pose tracking with jump apex detection.
 
-Track ankle/foot height or the bottom of a detected person bounding box.
-Do not require the blue floor line to overlap the subject. Distances
-are screen-space estimates until physically calibrated.
+Reference height: average grounded foot y from video, NOT arbitrary hip height.
+True metric height requires ruler/camera calibration.
 """
 import cv2
 import numpy as np
-from measurement import Jump, metres_from_pixels
+from measurement import Jump
 
-
-def find_blue_lip(frame, x=None):
-    """Optional floor-line reference; never required for person detection."""
-    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-    h, w = hsv.shape[:2]
-    region = hsv[int(h * .60):]
-    mask = cv2.inRange(region, np.array([85, 35, 35]), np.array([135, 255, 255]))
-    scores = np.count_nonzero(mask, axis=1)
-    if scores.size and scores.max() >= max(3, w * .08):
-        return int(np.argmax(scores) + h * .60)
-    return None
+# Standard COCO-17 keypoint skeleton connections
+SKELETON = [(5,6),(5,7),(7,9),(6,8),(8,10),(5,11),(6,12),
+            (11,12),(11,13),(13,15),(12,14),(14,16),(0,1),(0,2),
+            (1,3),(2,4)]
 
 
 def find_jump_peaks(observations, fps, sensitivity=.45):
-    """Find sustained upward foot movement from observed image y positions.
-
-    observations: (frame number, lowest visible foot/bbox y) pairs.
-    A peak is a *candidate*, not a validated jump or metre measurement.
-    """
+    """Select highest measured feet position in each airborne interval."""
     if len(observations) < 5:
         return []
-    frames = np.array([v[0] for v in observations], dtype=np.int32)
-    bottoms = np.array([v[1] for v in observations], dtype=float)
-    baseline = float(np.percentile(bottoms, 85))
-    heights = np.maximum(0, baseline - bottoms)
-    radius = 2
-    smooth = np.convolve(np.pad(heights, (radius, radius), mode="edge"),
-                         np.ones(2*radius+1)/(2*radius+1), mode="valid")
-    min_height = 14 + (1 - float(sensitivity)) * 25
-    min_gap = max(1, int(fps * .65))
-    peaks = []
-    for i in range(2, len(smooth)-2):
-        if smooth[i] < min_height or smooth[i] < max(smooth[i-2:i+3]):
-            continue
-        # Require nearby frames to show a visible up/down motion.
-        span = max(4, int(fps * .6 / max(1, np.median(np.diff(frames)))))
-        lo = max(0, i-span)
-        hi = min(len(smooth), i+span+1)
-        if smooth[i] - min(np.min(smooth[lo:i+1]),np.min(smooth[i:hi])) < min_height*.5:
-            continue
-        if peaks and frames[i] - peaks[-1][0] < min_gap:
-            if smooth[i] > peaks[-1][1]:
-                peaks[-1] = (int(frames[i]), float(smooth[i]))
-        else:
-            peaks.append((int(frames[i]), float(smooth[i])))
-    return peaks
+    frames = np.array([v[0] for v in observations], dtype=int)
+    feet = np.array([v[1] for v in observations], dtype=float)
+    # The ground reference is the lower foot location reached while standing.
+    floor = float(np.percentile(feet, 90))
+    raw_height = np.maximum(0, floor-feet)
+    kernel = np.ones(5)/5
+    smooth = np.convolve(np.pad(raw_height,(2,2),mode="edge"),kernel,mode="valid")
+    cutoff = 12 + (1-float(sensitivity))*23
+    airborne = smooth > cutoff
+    events=[]
+    start=None
+    for i in range(len(airborne)+1):
+        active = bool(airborne[i]) if i<len(airborne) else False
+        if active and start is None:
+            start=i
+        elif not active and start is not None:
+            end=i
+            if end-start>=2:
+                apex=start+int(np.argmax(smooth[start:end]))
+                if smooth[apex]>=cutoff and (not events or frames[apex]-events[-1][0] >= fps*.45):
+                    events.append((int(frames[apex]),float(raw_height[apex])))
+            start=None
+    return events
 
 
 def analyze_video(path, scale=0, stride=4, sensitivity=.45, progress=None):
     try:
         from ultralytics import YOLO
     except ImportError as exc:
-        raise RuntimeError("Install dependencies: pip install -r requirements.txt") from exc
-    model = YOLO("yolov8n-pose.pt")
-    cap = cv2.VideoCapture(str(path))
+        raise RuntimeError("Install ultralytics using pip install -r requirements.txt") from exc
+    model=YOLO("yolov8n-pose.pt")
+    cap=cv2.VideoCapture(str(path))
     if not cap.isOpened():
-        raise RuntimeError("Cannot open video")
-    count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    fps = cap.get(cv2.CAP_PROP_FPS) or 30
-    stride = max(1, int(stride))
-    observations = []
-    previous = None
+        raise RuntimeError("Cannot read video")
+    count=int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    fps=cap.get(cv2.CAP_PROP_FPS) or 30
+    stride=max(1,int(stride))
+    tracks={}
+    observations=[]
+    previous=None
     try:
-        for frame_number in range(0, count, stride):
-            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
-            ok, frame = cap.read()
-            if not ok:
-                break
-            h, w = frame.shape[:2]
-            result = model.predict(frame, conf=.18, imgsz=640,
-                                   verbose=False, device="cpu")[0]
-            choices = []
-            boxes = result.boxes.xyxy.cpu().numpy() if result.boxes is not None else []
-            points = (result.keypoints.xy.cpu().numpy()
-                      if result.keypoints is not None else [])
-            confidence = (result.keypoints.conf.cpu().numpy()
-                          if result.keypoints is not None and
-                             result.keypoints.conf is not None else None)
+        for frame_no in range(0,count,stride):
+            cap.set(cv2.CAP_PROP_POS_FRAMES,frame_no)
+            ok,frame=cap.read()
+            if not ok: break
+            h,w=frame.shape[:2]
+            result=model.predict(frame,imgsz=640,conf=.16,verbose=False,device="cpu")[0]
+            boxes=result.boxes.xyxy.cpu().numpy() if result.boxes is not None else []
+            kps=result.keypoints.xy.cpu().numpy() if result.keypoints is not None else []
+            conf=(result.keypoints.conf.cpu().numpy()
+                  if result.keypoints is not None and result.keypoints.conf is not None else None)
+            choices=[]
             for i, box in enumerate(boxes):
-                x1,y1,x2,y2 = map(float,box)
-                if x2-x1 < w*.12 or y2-y1 < h*.12:
-                    continue
-                foot_y = y2
-                if i < len(points) and len(points[i]) >= 17:
-                    ankle_y = [float(points[i][k][1]) for k in (15,16)
-                               if confidence is None or confidence[i][k] > .25]
-                    if ankle_y:
-                        foot_y = max(ankle_y)
-                center = ((x1+x2)/2, (y1+y2)/2)
-                choices.append((center,foot_y))
+                x1,y1,x2,y2=map(float,box)
+                if x2-x1 < w*.10 or y2-y1 < h*.10: continue
+                pts=np.asarray(kps[i],dtype=float) if i<len(kps) else np.zeros((17,2))
+                scores=conf[i] if conf is not None and i<len(conf) else np.zeros(17)
+                visible=[j for j in (15,16) if scores[j]>.25 and pts[j,1]>0]
+                foot=float(max(pts[j,1] for j in visible)) if visible else y2
+                center=((x1+x2)/2,(y1+y2)/2)
+                choices.append((center,foot,pts.tolist(),scores.tolist()))
             if choices:
-                selected = (min(choices,key=lambda v:(v[0][0]-previous[0])**2+
-                                (v[0][1]-previous[1])**2) if previous is not None
-                            else max(choices,key=lambda v:v[1]))
-                previous = selected[0]
-                observations.append((frame_number,selected[1]))
-            if progress and frame_number % max(1,int(fps)) < stride:
-                progress(min(100,int(frame_number*100/max(1,count))))
+                selected=(min(choices,key=lambda q:(q[0][0]-previous[0])**2+(q[0][1]-previous[1])**2)
+                          if previous is not None else max(choices,key=lambda q:q[1]))
+                previous=selected[0]
+                observations.append((frame_no,selected[1]))
+                tracks[frame_no]={"points":selected[2],"conf":selected[3],
+                                  "foot_y":selected[1]}
+            if progress and frame_no % max(stride,int(fps))<stride:
+                progress(min(100,int(frame_no*100/max(1,count))))
     finally:
         cap.release()
-    peaks = find_jump_peaks(observations,fps,sensitivity)
-    # Scale describes image-space screen distance, not true athlete's hip
-    # height. Therefore do not supply a misleading number of metres.
-    return [Jump(frame=frame,height_m=None,pixel_height=height,
-                 source="auto candidate") for frame,height in peaks]
+    events=find_jump_peaks(observations,fps,sensitivity)
+    # The floor baseline for the displayed blue line.
+    floor=float(np.percentile([v[1] for v in observations],90)) if observations else None
+    if floor is not None:
+        for record in tracks.values():
+            record["baseline_y"]=floor
+            record["height_px"]=max(0.,floor-record["foot_y"])
+    # Do not invent metres from a camera scale that hasn't been calibrated.
+    jumps=[Jump(frame=f,height_m=None,pixel_height=px,source="auto candidate") for f,px in events]
+    return {"jumps":jumps,"tracks":tracks,"baseline":floor}
