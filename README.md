@@ -100,3 +100,7 @@ Each video generates \`yourfile.mp4.prototype-v1.2.json\`. This is ignored by Gi
 python -m compileall -q app.py measurement.py
 python -m unittest discover -s tests -v
 \`\`\`
+
+### Ruler calibration and floor tape (indoor clip)
+
+In the Home view click **Calibrate ruler**. Click two marks **exactly 1.00 metre apart** on the yellow ruler, first and second, in the video frame. The measured distance sets pixels per metre and enables *approximate* metre readouts. If the ruler does not show two identifiable marks that far apart, do not guess; leave the measurement uncalibrated. The blue overlay is fixed to the pale floor tape detected near the lower edge of the first video frame. A separate standing-foot reference is used to calculate *jump displacement*: the foreground tape is not at the person's feet and therefore cannot be used as the foot takeoff y coordinate. The guide line toward the ruler is visual, not a full perspective correction. YOLO ankle detection can remain inaccurate when feet blur or leave the frame, so verify peak frames manually.
