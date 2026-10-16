@@ -12,13 +12,13 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-from PySide6.QtCore import Qt, QTimer, Signal, QThread, QPointF, QRectF
+from PySide6.QtCore import Qt, QTimer, Signal, QThread, QPointF, QRectF, QPropertyAnimation, QEasingCurve
 from PySide6.QtGui import QFont, QFontDatabase, QIcon, QImage, QPainter, QPen, QColor, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QWidget, QMainWindow, QFileDialog, QHBoxLayout, QVBoxLayout,
     QLabel, QPushButton, QSlider, QStackedWidget, QFrame, QScrollArea,
     QDoubleSpinBox, QSpinBox, QCheckBox, QMessageBox, QProgressBar,
-    QSizePolicy
+    QSizePolicy, QGraphicsOpacityEffect
 )
 from measurement import Jump, metres_from_pixels, pixel_height_above_lip, track_candidates
 
@@ -223,7 +223,7 @@ class DefaultVideoDownload(QThread):
 class App(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Prototype V1.2 — Halfpipe")
+        self.setWindowTitle("Prototype V1.3 — Halfpipe")
         self.resize(1160,760)
         self.setMinimumSize(830,550)
         self.cap=None
@@ -253,7 +253,7 @@ class App(QMainWindow):
         sl=QVBoxLayout(sidebar)
         sl.setContentsMargins(14,28,14,18)
         sl.setSpacing(10)
-        logo=QLabel("◢  Prototype")
+        logo=QLabel("◢  Prototype V1.3")
         logo.setStyleSheet("font-weight:700;font-size:15px;margin-bottom:30px;")
         sl.addWidget(logo)
         self.home_btn=make_button("  Home","home")
@@ -261,7 +261,7 @@ class App(QMainWindow):
         sl.addWidget(self.home_btn)
         sl.addWidget(self.settings_btn)
         sl.addStretch()
-        sl.addWidget(textlabel("V1.2  •  Experimental",10,MUTED))
+        sl.addWidget(textlabel("Automatic analysis • Beta",10,MUTED))
         layout.addWidget(sidebar)
         self.pages=QStackedWidget()
         layout.addWidget(self.pages,1)
@@ -284,7 +284,7 @@ class App(QMainWindow):
         self.open_btn.clicked.connect(self.open_video)
         top.addWidget(self.open_btn)
         main.addLayout(top)
-        main.addWidget(textlabel("Review every frame, mark jumps, and measure hip height above the lip.",12,MUTED))
+        main.addWidget(textlabel("Automatic skier detection • frame-by-frame playback • jump timeline",12,MUTED))
         self.canvas=VideoCanvas()
         self.canvas.clicked_frame.connect(self.canvas_clicked)
         main.addWidget(self.canvas,1)
@@ -309,7 +309,7 @@ class App(QMainWindow):
         self.timeline.seek.connect(self.seek)
         main.addWidget(self.timeline)
         description=QHBoxLayout()
-        description.addWidget(textlabel("Green dots: marked jumps     Orange dots: suggested candidates",11,MUTED))
+        description.addWidget(textlabel("Orange markers: automatic jump candidates • verify before judging",11,MUTED))
         description.addStretch()
         main.addLayout(description)
         actions=QHBoxLayout()
@@ -387,7 +387,18 @@ class App(QMainWindow):
         self.pages.addWidget(scroller)
 
     def show_page(self,index):
-        self.pages.setCurrentIndex(index)
+        if self.pages.currentIndex() != index:
+            widget = self.pages.widget(index)
+            self.pages.setCurrentIndex(index)
+            effect = QGraphicsOpacityEffect(widget)
+            widget.setGraphicsEffect(effect)
+            animation = QPropertyAnimation(effect, b"opacity", self)
+            animation.setDuration(190)
+            animation.setStartValue(0.72)
+            animation.setEndValue(1.0)
+            animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+            animation.start()
+            self._page_animation = animation
         self.home_btn.setProperty("selected",index==0)
         self.settings_btn.setProperty("selected",index==1)
         for b in (self.home_btn,self.settings_btn):
@@ -471,7 +482,7 @@ class App(QMainWindow):
         self.read_sidecar()
         self.timeline.total=self.frames
         self.seek(0)
-        self.setWindowTitle(f"Prototype V1.2 — {Path(filename).name}")
+        self.setWindowTitle(f"Prototype V1.3 — {Path(filename).name}")
 
     def seek(self,n):
         if not self.cap:
@@ -636,9 +647,9 @@ def main():
     font_file=ROOT/"assets"/"Inter-Regular.ttf"
     if font_file.exists():
         QFontDatabase.addApplicationFont(str(font_file))
-    app.setFont(QFont("Inter",10))
+    app.setFont(QFont("Inter" if "Inter" in QFontDatabase.families() else "Segoe UI", 10))
     app.setStyleSheet("""
-        QWidget { background:#ffffff; color:#151b2b; font-family:Inter,'Segoe UI',sans-serif; font-size:12px; }
+        QWidget { background:#ffffff; color:#151b2b; font-family:Inter,'Segoe UI',sans-serif; font-size:13px; }
         QFrame#side { background:#fbfcff; border-right:1px solid #e8ecf2; }
         QFrame#side QLabel { background:transparent; }
         QPushButton { background:#f6f8fb; border:1px solid #e6ebf1; border-radius:11px; padding:9px 14px; text-align:center; }
