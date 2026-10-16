@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.venv/
+.vscode/
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.json
+!example-settings.json
