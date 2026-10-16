@@ -100,6 +100,9 @@ class VideoCanvas(QWidget):
         self.pan_x=.5
         self.pan_y=.5
         self._drag_start=None
+        self._left_pending=False
+        self._dragging=False
+        self.pan_mode=False
         self.setMinimumSize(360, 180)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setCursor(Qt.CursorShape.CrossCursor)
@@ -115,20 +118,18 @@ class VideoCanvas(QWidget):
     def mousePressEvent(self, event):
         if self.frame is None:
             return
-        if event.button() == Qt.MouseButton.RightButton:
-            self._drag_start=event.position()
+        self._press_pos = event.position()
+        if event.button() == Qt.MouseButton.RightButton or self.pan_mode:
+            self._drag_start = event.position()
+            self._dragging = True
             event.accept()
             return
         if event.button() != Qt.MouseButton.LeftButton:
+            event.ignore()
             return
-        box = self.frame_rect()
-        if not box.contains(event.position()):
-            return
-        ih, iw = self.frame.shape[:2]
-        x = (event.position().x()-box.x())/box.width()*iw
-        y = (event.position().y()-box.y())/box.height()*ih
-        if 0<=x<iw and 0<=y<ih:
-            self.clicked_frame.emit(x,y)
+        # Only release of a genuine left click can select a calibration mark.
+        self._left_pending = True
+        event.accept()
 
     def wheelEvent(self,event):
         if self.frame is None:
@@ -145,8 +146,7 @@ class VideoCanvas(QWidget):
         self.update()
 
     def mouseMoveEvent(self,event):
-        if (self._drag_start is not None and self.frame is not None
-                and event.buttons() & Qt.MouseButton.RightButton):
+        if self._drag_start is not None and self.frame is not None:
             dx=event.position().x()-self._drag_start.x()
             dy=event.position().y()-self._drag_start.y()
             area=self.frame_rect()
@@ -154,11 +154,35 @@ class VideoCanvas(QWidget):
             self.pan_y=max(0.,min(1.,self.pan_y-dy/area.height()))
             self._drag_start=event.position()
             self.update()
+            event.accept()
+        elif getattr(self,"_left_pending",False):
+            if (event.position()-self._press_pos).manhattanLength()>7:
+                self._left_pending=False
 
     def mouseReleaseEvent(self,event):
-        if event.button() == Qt.MouseButton.RightButton:
+        if self._drag_start is not None:
             self._drag_start=None
+            self._dragging=False
             event.accept()
+            return
+        if event.button()!=Qt.MouseButton.LeftButton or not self._left_pending:
+            return
+        self._left_pending=False
+        if self.pan_mode or self.frame is None:
+            return
+        box=self.frame_rect()
+        if not box.contains(event.position()):
+            return
+        ih,iw=self.frame.shape[:2]
+        px=(event.position().x()-box.x())/box.width()*iw
+        py=(event.position().y()-box.y())/box.height()*ih
+        if 0<=px<iw and 0<=py<ih:
+            self.clicked_frame.emit(px,py)
+        event.accept()
+
+    def contextMenuEvent(self,event):
+        # Suppress native right-click menu while calibrating or panning.
+        event.accept()
 
     def reset_zoom(self):
         self.zoom=1.
@@ -439,6 +463,9 @@ class App(QMainWindow):
         tools = QHBoxLayout()
         tools.setSpacing(8)
         self.calibrate_btn = make_button("Calibrate ruler")
+        self.pan_btn=make_button("Pan: off")
+        self.pan_btn.setCheckable(True)
+        self.pan_btn.toggled.connect(self.set_pan_mode)
         self.reset_zoom_btn=make_button("Reset zoom")
         self.reset_zoom_btn.clicked.connect(self.canvas.reset_zoom)
         self.calibrate_btn.clicked.connect(self.begin_ruler_calibration)
@@ -449,6 +476,7 @@ class App(QMainWindow):
         tools.addWidget(self.scan_btn)
         tools.addWidget(self.calibrate_btn)
         tools.addWidget(self.reset_zoom_btn)
+        tools.addWidget(self.pan_btn)
         tools.addWidget(self.remove_btn)
         tools.addStretch()
         tools.addWidget(textlabel("●  Detected jump", 10, MUTED))
@@ -567,6 +595,11 @@ class App(QMainWindow):
         else:
             self.notice.setText("Click the athlete's HIP centre on this frame.")
         self.update_display()
+
+    def set_pan_mode(self, active):
+        self.canvas.pan_mode=active
+        self.pan_btn.setText("Pan: on" if active else "Pan: off")
+        self.notice.setText("Pan ON: left-drag to move; turn off to click ruler marks." if active else "Pan OFF: left-click ruler marks; right-drag also pans.")
 
     def begin_ruler_calibration(self):
         if not self.cap:
